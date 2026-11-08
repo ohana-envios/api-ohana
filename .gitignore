@@ -6,3 +6,4 @@ coverage/
 !.env.example
 src/generated/prisma/
 .DS_Store
+verification.local.log
