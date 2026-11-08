@@ -11,7 +11,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "prisma generate && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
-    "test": "tsx --test test/*.test.ts",
+    "test": "node --import tsx --test test/*.test.ts",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
@@ -33,12 +33,9 @@
     "rxjs": "7.8.2"
   },
   "devDependencies": {
-    "@nestjs/testing": "11.1.3",
     "@types/node": "22.19.3",
     "@types/pg": "8.15.5",
-    "@types/supertest": "6.0.3",
     "prisma": "7.8.0",
-    "supertest": "7.1.1",
     "tsx": "4.23.13",
     "typescript": "5.9.3"
   }
