@@ -59,6 +59,8 @@ API REST modular de Ohana Envíos. Esta entrega cubre la base técnica (SCRUM-12
 
    Respuesta esperada con PostgreSQL disponible: `{"status":"ok","database":"up"}`. Si la conexión cae después del arranque, la ruta responde HTTP 503. La aplicación exige una conexión válida al iniciar.
 
+Para ejecutar todo el proceso de verificación anterior con una sola orden y guardar la salida localmente, use `bash scripts/verify-local.sh`. El archivo `verification.local.log` no se sube a Git.
+
 ## Configuración
 
 | Variable | Uso |
