@@ -6,13 +6,18 @@ import { parseCorsOrigins } from './config/environment.js';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
-  const config = app.get(ConfigService);
-  const origins = parseCorsOrigins(config.getOrThrow<string>('CORS_ORIGINS'));
+  try {
+    const config = app.get(ConfigService);
+    const origins = parseCorsOrigins(config.getOrThrow<string>('CORS_ORIGINS'));
 
-  app.setGlobalPrefix('api');
-  app.enableCors({ origin: origins, credentials: false });
-  app.enableShutdownHooks();
-  await app.listen(config.getOrThrow<number>('PORT'));
+    app.setGlobalPrefix('api');
+    app.enableCors({ origin: origins, credentials: false });
+    app.enableShutdownHooks();
+    await app.listen(config.getOrThrow<number>('PORT'));
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
 }
 
 bootstrap().catch((error: unknown) => {
