@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { HealthModule } from '../src/health/health.module.js';
+import { PrismaModule } from '../src/prisma/prisma.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
 let app: INestApplication | undefined;
@@ -15,8 +16,7 @@ afterEach(async () => {
 
 async function createApp(query: () => Promise<unknown>): Promise<INestApplication> {
   const module = await Test.createTestingModule({
-    imports: [HealthModule],
-    providers: [PrismaService],
+    imports: [PrismaModule, HealthModule],
   })
     .overrideProvider(PrismaService)
     .useValue({ $queryRaw: query })
