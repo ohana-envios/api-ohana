@@ -10,14 +10,22 @@ API REST modular de Ohana Envíos. Esta entrega cubre la base técnica (SCRUM-12
 
 ## Inicio local
 
-1. Cree una base de datos local, por ejemplo `ohana_dev`, y un usuario PostgreSQL con permisos sobre ella. Puede usar su instalación de PostgreSQL o un contenedor; no guarde la contraseña en Git.
+1. Cree una base de datos local, por ejemplo `ohana_dev`, y un usuario PostgreSQL con permisos sobre ella. Si usa Docker, esta instancia descartable sirve solo para desarrollo:
+
+   ```bash
+   docker run --rm --name ohana-postgres \
+     -e POSTGRES_USER=ohana -e POSTGRES_PASSWORD=ohana_local_only \
+     -e POSTGRES_DB=ohana_dev -p 127.0.0.1:5432:5432 postgres:17
+   ```
+
+   La contraseña del ejemplo es pública y **no debe usarse fuera de una base local descartable**. Mantenga el contenedor en ejecución mientras prueba la API. No guarde credenciales reales en Git.
 2. Copie el ejemplo y ajuste únicamente su archivo local:
 
    ```bash
    cp .env.example .env
    ```
 
-   `DATABASE_URL` debe apuntar a PostgreSQL. El ejemplo usa autenticación local sin contraseña. Si su servidor exige una, configure una URL privada en `.env` y codifique los caracteres especiales de la contraseña en formato URL.
+   `DATABASE_URL` debe apuntar a PostgreSQL. Para el contenedor anterior use `postgresql://ohana:ohana_local_only@localhost:5432/ohana_dev` en `.env`. El archivo `.env.example` no contiene credenciales. Para otro servidor, configure una URL privada en `.env` y codifique los caracteres especiales de la contraseña en formato URL.
 3. Instale las dependencias y genere el cliente:
 
    ```bash
