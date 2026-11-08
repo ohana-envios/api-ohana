@@ -52,6 +52,7 @@ model Customer {
   type           CustomerType
   displayName    String
   legalName      String?
+  documentType   String?
   documentNumber String?
   email          String?
   phone          String?
@@ -61,7 +62,7 @@ model Customer {
   addresses      Address[]
   shipments      Shipment[]
 
-  @@index([type, documentNumber])
+  @@index([documentType, documentNumber])
   @@index([enabled, displayName])
 }
 

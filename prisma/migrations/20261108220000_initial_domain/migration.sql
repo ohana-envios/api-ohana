@@ -21,6 +21,7 @@ CREATE TABLE "Customer" (
   "type" "CustomerType" NOT NULL,
   "displayName" TEXT NOT NULL,
   "legalName" TEXT,
+  "documentType" TEXT,
   "documentNumber" TEXT,
   "email" TEXT,
   "phone" TEXT,
@@ -105,7 +106,7 @@ CREATE TABLE "ShipmentEvent" (
 CREATE UNIQUE INDEX "User_externalAuthId_key" ON "User"("externalAuthId");
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE INDEX "User_role_enabled_idx" ON "User"("role", "enabled");
-CREATE INDEX "Customer_type_documentNumber_idx" ON "Customer"("type", "documentNumber");
+CREATE INDEX "Customer_documentType_documentNumber_idx" ON "Customer"("documentType", "documentNumber");
 CREATE INDEX "Customer_enabled_displayName_idx" ON "Customer"("enabled", "displayName");
 CREATE INDEX "Address_customerId_idx" ON "Address"("customerId");
 CREATE UNIQUE INDEX "Shipment_code_key" ON "Shipment"("code");

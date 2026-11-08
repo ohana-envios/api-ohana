@@ -41,6 +41,7 @@ try {
   for (const name of [
     'User_externalAuthId_key',
     'User_email_key',
+    'Customer_documentType_documentNumber_idx',
     'Shipment_code_key',
     'Package_shipmentId_sequence_key',
     'Shipment_customerId_createdAt_idx',
@@ -105,6 +106,12 @@ try {
       /ShipmentEvent is append-only/,
     );
     await client.query('ROLLBACK TO SAVEPOINT protect_event');
+    await client.query('SAVEPOINT protect_event_delete');
+    await assert.rejects(
+      client.query('DELETE FROM "ShipmentEvent" WHERE "id" = $1', [eventId]),
+      /ShipmentEvent is append-only/,
+    );
+    await client.query('ROLLBACK TO SAVEPOINT protect_event_delete');
   } finally {
     await client.query('ROLLBACK');
   }
