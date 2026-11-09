@@ -28,6 +28,7 @@ for repo in "${repos[@]}"; do
       -f name="$branch" -f type=branch >/dev/null
     echo "Creado: $environment; rama autorizada: $branch"
   done
+  gh api "repos/$full_name/environments" --jq '.environments[] | [.name, (.deployment_branch_policy | tostring)] | @tsv'
 done
 
 echo 'Listo. Configurar revisores, secrets y variables en Settings > Environments antes de desplegar.'
