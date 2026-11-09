@@ -55,3 +55,10 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Validate environment definitions
+        run: |
+          docker compose -f infra/compose.dev.yml config --quiet
+          docker compose --env-file infra/staging.env.example -p ohana-staging -f infra/compose.deploy.yml config --quiet
+          docker compose --env-file infra/production.env.example -p ohana-production -f infra/compose.deploy.yml config --quiet
+      - name: Build deployment image
+        run: docker build -t ohana-api:ci .

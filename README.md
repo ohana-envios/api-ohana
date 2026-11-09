@@ -1,6 +1,6 @@
 # Ohana Envíos API
 
-API REST modular de Ohana Envíos. Esta entrega cubre la base técnica (SCRUM-12) y el modelo relacional inicial (SCRUM-13). No incluye aún autenticación Auth0 ni los casos de uso operativos completos.
+API REST modular de Ohana Envíos. Incluye la base técnica (SCRUM-12), el modelo relacional inicial (SCRUM-13) y validación inicial de access tokens Auth0 (SCRUM-14). El tenant y los casos de uso operativos completos todavía requieren configuración e implementación.
 
 ## Requisitos
 
@@ -69,8 +69,12 @@ Para ejecutar todo el proceso de verificación anterior con una sola orden y gua
 | `PORT` | Puerto HTTP; por defecto `3000`. |
 | `NODE_ENV` | `development`, `test` o `production`. |
 | `CORS_ORIGINS` | Orígenes web exactos, separados por comas. Vacío bloquea solicitudes CORS. |
+| `AUTH0_ISSUER_BASE_URL` | URL HTTPS del tenant Auth0; obligatoria en producción. |
+| `AUTH0_AUDIENCE` | Identifier de la API Auth0; obligatorio junto al emisor. |
 
 La configuración se valida al iniciar. El archivo `.env` y el cliente Prisma generado están excluidos de Git. `prisma.config.ts` sigue el formato de Prisma 7: la URL reside allí y la conexión de la aplicación usa `@prisma/adapter-pg`.
+
+`GET /api/auth/me` exige un access token JWT válido de Auth0. La guía [docs/auth0-setup.md](docs/auth0-setup.md) explica cómo registrar la API y la SPA, configurar correo verificado y MFA, y probar la validación. En desarrollo el health funciona sin tenant; el endpoint protegido devuelve 503 hasta configurar Auth0. En producción la API no arranca sin emisor y audiencia.
 
 ## Migraciones y CI
 
@@ -80,6 +84,8 @@ La configuración se valida al iniciar. El archivo `.env` y el cliente Prisma ge
 - CI inicia PostgreSQL de prueba, instala con `npm ci`, valida y genera Prisma Client, aplica migraciones, comprueba esquema, compila, ejecuta pruebas y llama al endpoint HTTP.
 
 La migración inicial incluye seis tablas, claves foráneas con `ON DELETE RESTRICT`, índices y un trigger que impide modificar o borrar eventos históricos. Los bultos se identifican mediante el código del envío más su secuencia; no tienen un código independiente en este alcance.
+
+La configuración de [desarrollo, staging y producción](docs/environments.md) incluye Docker Compose para PostgreSQL local y proyectos de despliegue aislados. Staging y producción requieren VPS, dominios, HTTPS y credenciales reales antes de poder activarse.
 
 ## Modelo y decisiones pendientes
 
