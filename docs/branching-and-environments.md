@@ -20,7 +20,7 @@ feature/* → dev → staging → main
 
 ## GitHub Actions y GitHub Environments
 
-Los workflows de los tres repositorios escuchan pushes y PR hacia `dev`, `staging` y `main`. En GitHub conviene crear los Environments `development`, `staging` y `production`; estos son objetos distintos de las ramas. Configurar `production` con aprobación de otro integrante, restringir ramas permitidas y separar secretos. Los environments no deben contener valores hasta tener URLs, VPS y tenant Auth0 confirmados.
+Los workflows de los tres repositorios escuchan pushes y PR hacia `dev`, `staging` y `main`. En GitHub conviene crear los Environments `dev`, `staging` y `production`; estos son objetos distintos de las ramas. Configurar `production` con aprobación de otro integrante, restringir ramas permitidas y separar secretos. Los environments no deben contener valores hasta tener URLs, VPS y tenant Auth0 confirmados.
 
 Checks iniciales:
 
