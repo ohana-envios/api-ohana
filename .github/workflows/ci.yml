@@ -2,9 +2,9 @@ name: API CI
 
 on:
   push:
-    branches: [main, feat/scrum-12-13-backend-modelo, feat/scrum-14-auth0]
+    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo, feat/scrum-14-auth0]
   pull_request:
-    branches: [main, feat/scrum-12-13-backend-modelo]
+    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo]
 
 jobs:
   verify:

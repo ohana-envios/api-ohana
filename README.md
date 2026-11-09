@@ -86,6 +86,7 @@ La configuración se valida al iniciar. El archivo `.env` y el cliente Prisma ge
 La migración inicial incluye seis tablas, claves foráneas con `ON DELETE RESTRICT`, índices y un trigger que impide modificar o borrar eventos históricos. Los bultos se identifican mediante el código del envío más su secuencia; no tienen un código independiente en este alcance.
 
 La configuración de [desarrollo, staging y producción](docs/environments.md) incluye Docker Compose para PostgreSQL local y proyectos de despliegue aislados. Staging y producción requieren VPS, dominios, HTTPS y credenciales reales antes de poder activarse.
+La estrategia de [ramas y promoción](docs/branching-and-environments.md) define `feature/* → dev → staging → main` mediante PR y revisión.
 
 ## Modelo y decisiones pendientes
 
