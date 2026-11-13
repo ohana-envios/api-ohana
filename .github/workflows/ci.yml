@@ -1,0 +1,107 @@
+name: API CI
+
+on:
+  push:
+    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo, feat/scrum-14-auth0, feat/scrum-14-oidc-zitadel]
+  pull_request:
+    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ohana_test
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_DB: ohana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ohana_test -d ohana_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PORT: 3100
+      DATABASE_URL: postgresql://ohana_test:test_only@localhost:5432/ohana_test
+      CORS_ORIGINS: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:validate
+      - run: npm run prisma:generate
+      - run: npm run prisma:migrate:deploy
+      - run: npm run prisma:migrate:status
+      - run: npm run prisma:migrate:diff
+      - run: npm run db:verify
+      - run: npm run build
+      - run: npm test
+      - name: HTTP health check against PostgreSQL
+        run: |
+          node dist/main.js &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://localhost:3100/api/health | grep -q '"database":"up"'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Validate environment definitions
+        run: |
+          docker compose -f infra/compose.dev.yml config --quiet
+          docker compose --env-file infra/staging.env.example -p ohana-staging -f infra/compose.deploy.yml config --quiet
+          docker compose --env-file infra/production.env.example -p ohana-production -f infra/compose.deploy.yml config --quiet
+      - name: Build deployment image
+        run: docker build -t ohana-api:ci .
+
+  deploy_staging:
+    name: Deploy API to staging VPS
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: api-staging-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Transfer verified source and deploy
+        env:
+          STAGING_SSH_HOST: ${{ vars.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ vars.STAGING_SSH_USER }}
+          STAGING_SSH_PORT: ${{ vars.STAGING_SSH_PORT || '22' }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for value in STAGING_SSH_HOST STAGING_SSH_USER STAGING_SSH_PRIVATE_KEY STAGING_SSH_KNOWN_HOSTS; do
+            if [[ -z "${!value}" ]]; then
+              echo "Falta $value en el Environment staging" >&2
+              exit 1
+            fi
+          done
+          [[ "$STAGING_SSH_PORT" =~ ^[0-9]+$ ]] || { echo 'Puerto SSH inválido' >&2; exit 1; }
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf "$work_dir"' EXIT
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > "$work_dir/key"
+          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$work_dir/known_hosts"
+          chmod 600 "$work_dir/key" "$work_dir/known_hosts"
+          ssh_options=(-i "$work_dir/key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$work_dir/known_hosts" -p "$STAGING_SSH_PORT")
+          scp_options=(-i "$work_dir/key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$work_dir/known_hosts" -P "$STAGING_SSH_PORT")
+          tar -czf "$work_dir/source.tar.gz" Dockerfile package.json package-lock.json prisma prisma.config.ts tsconfig.json tsconfig.build.json src infra/compose.deploy.yml scripts/deploy-staging.sh
+          ssh "${ssh_options[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'mkdir -p "$HOME/ohana-staging/incoming"'
+          scp "${scp_options[@]}" "$work_dir/source.tar.gz" "$STAGING_SSH_USER@$STAGING_SSH_HOST:ohana-staging/incoming/$GITHUB_SHA.tar.gz"
+          ssh "${ssh_options[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" "mkdir -p \"\$HOME/ohana-staging/releases/$GITHUB_SHA\" && tar -xzf \"\$HOME/ohana-staging/incoming/$GITHUB_SHA.tar.gz\" -C \"\$HOME/ohana-staging/releases/$GITHUB_SHA\" && bash \"\$HOME/ohana-staging/releases/$GITHUB_SHA/scripts/deploy-staging.sh\" $GITHUB_SHA"
