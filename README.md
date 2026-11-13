@@ -51,6 +51,8 @@ API REST modular de Ohana Envíos. Incluye la base técnica (SCRUM-12), el model
    npm run dev
    ```
 
+   `npm run dev` compila con TypeScript y reinicia la API al cambiar archivos. El compilador de TypeScript conserva los metadatos de decoradores que NestJS necesita para la inyección de dependencias. Si el puerto `3000` está ocupado, use `PORT=3101 npm run dev` y ajuste la URL de la web al mismo puerto.
+
    En otra terminal:
 
    ```bash
