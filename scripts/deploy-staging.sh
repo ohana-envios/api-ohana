@@ -20,8 +20,24 @@ compose=(docker compose --env-file "$env_file" -p ohana-staging -f "$release/inf
 "${compose[@]}" build api
 "${compose[@]}" up -d postgres
 
+# Esperar a que PostgreSQL acepte conexiones antes de respaldar.
+db_ready=false
+for attempt in $(seq 1 30); do
+  if "${compose[@]}" exec -T postgres sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+    db_ready=true
+    break
+  fi
+  sleep 2
+done
+if [[ "$db_ready" != true ]]; then
+  echo 'PostgreSQL no quedó listo; se detiene el despliegue antes del respaldo' >&2
+  "${compose[@]}" ps >&2 || true
+  exit 1
+fi
+
 # La copia queda en el VPS. Nunca se envía a Actions ni al repositorio.
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
 backup_tmp="$root/backups/$timestamp-before-$sha.dump.tmp"
 backup="$root/backups/$timestamp-before-$sha.dump"
 if ! "${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup_tmp"; then
