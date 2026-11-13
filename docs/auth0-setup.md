@@ -1,3 +1,5 @@
+> Guía histórica. La decisión actual para MFA gratuito de Ohana está en [zitadel-setup.md](zitadel-setup.md). No usar esta guía para nuevos despliegues.
+
 # Auth0 — configuración inicial de SCRUM-14
 
 La API valida access tokens JWT de Auth0 mediante JWKS remoto, firma RS256, emisor, audiencia, vencimiento y sujeto. `GET /api/auth/me` devuelve únicamente el identificador externo (`sub`) cuando recibe un token válido. `GET /api/health` sigue siendo público. Los endpoints funcionales futuros deberán usar `AccessTokenGuard` y verificar permisos del usuario en la API; ocultar botones en la web no autoriza operaciones.

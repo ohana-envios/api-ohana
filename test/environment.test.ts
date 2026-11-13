@@ -24,11 +24,13 @@ test('valid configuration is normalized and CORS origins are checked', () => {
   assert.throws(() => parseCorsOrigins('https://example.com/path'), /Invalid CORS origin/);
 });
 
-test('Auth0 issuer and audience are paired and production requires them', () => {
+test('ZITADEL issuer, project and clients are paired and production requires them', () => {
   const database = { DATABASE_URL: 'postgresql://localhost:5432/ohana_test' };
-  assert.throws(() => validateEnvironment({ ...database, AUTH0_AUDIENCE: 'ohana-api' }), /configured together/);
+  assert.throws(() => validateEnvironment({ ...database, ZITADEL_PROJECT_ID: '123' }), /configured together/);
   assert.throws(() => validateEnvironment({ ...database, NODE_ENV: 'production' }), /required in production/);
-  assert.throws(() => validateEnvironment({ ...database, AUTH0_ISSUER_BASE_URL: 'http://example.com', AUTH0_AUDIENCE: 'ohana-api' }), /HTTPS origin/);
-  const config = validateEnvironment({ ...database, AUTH0_ISSUER_BASE_URL: 'https://ohana-test.auth0.com', AUTH0_AUDIENCE: 'ohana-api' });
-  assert.equal(config.AUTH0_ISSUER_BASE_URL, 'https://ohana-test.auth0.com/');
+  assert.throws(() => validateEnvironment({ ...database, ZITADEL_ISSUER_URL: 'http://example.com', ZITADEL_PROJECT_ID: '123', ZITADEL_WEB_CLIENT_IDS: '456@ohana', ZITADEL_API_CLIENT_ID: 'api@ohana', ZITADEL_API_CLIENT_SECRET: 'secret' }), /HTTPS origin/);
+  assert.throws(() => validateEnvironment({ ...database, ZITADEL_ISSUER_URL: 'https://example.com', ZITADEL_PROJECT_ID: 'not-a-project', ZITADEL_WEB_CLIENT_IDS: '456@ohana', ZITADEL_API_CLIENT_ID: 'api@ohana', ZITADEL_API_CLIENT_SECRET: 'secret' }), /numeric project ID/);
+  const config = validateEnvironment({ ...database, ZITADEL_ISSUER_URL: 'https://ohana-test.zitadel.cloud/', ZITADEL_PROJECT_ID: '123', ZITADEL_WEB_CLIENT_IDS: '456@ohana, 789@ohana', ZITADEL_API_CLIENT_ID: 'api@ohana', ZITADEL_API_CLIENT_SECRET: 'secret' });
+  assert.equal(config.ZITADEL_ISSUER_URL, 'https://ohana-test.zitadel.cloud');
+  assert.equal(config.ZITADEL_WEB_CLIENT_IDS, '456@ohana,789@ohana');
 });

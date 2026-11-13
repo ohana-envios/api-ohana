@@ -1,44 +1,65 @@
 import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
+type Introspection = { active?: boolean; iss?: string; aud?: string | string[]; client_id?: string; sub?: string; exp?: number; nbf?: number; token_type?: string };
 
 export async function verifyAccessToken(
   token: string,
-  keySet: JWTVerifyGetKey,
   issuer: string,
-  audience: string,
+  projectId: string,
+  apiClientId: string,
+  apiClientSecret: string,
+  allowedWebClientIds: readonly string[],
+  request: typeof fetch = fetch,
 ): Promise<{ sub: string }> {
+  let response: Response;
   try {
-    const { payload } = await jwtVerify(token, keySet, {
-      issuer,
-      audience,
-      algorithms: ['RS256'],
+    const credentials = `${encodeURIComponent(apiClientId)}:${encodeURIComponent(apiClientSecret)}`;
+    response = await request(`${issuer}/oauth/v2/introspect`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(credentials).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ token }),
+      signal: AbortSignal.timeout(5000),
     });
-    if (typeof payload.sub !== 'string' || !payload.sub || typeof payload.exp !== 'number' || typeof payload.iat !== 'number') {
-      throw new Error('Missing required claims');
-    }
-    return { sub: payload.sub };
   } catch {
+    throw new ServiceUnavailableException('Authentication unavailable');
+  }
+  if (!response.ok) throw new ServiceUnavailableException('Authentication unavailable');
+  let claims: Introspection;
+  try { claims = await response.json() as Introspection; }
+  catch { throw new ServiceUnavailableException('Authentication unavailable'); }
+  const audience = typeof claims.aud === 'string' ? [claims.aud] : claims.aud;
+  const now = Math.floor(Date.now() / 1000);
+  if (claims.active !== true || claims.iss !== issuer || !audience?.includes(projectId) ||
+    !claims.client_id || !allowedWebClientIds.includes(claims.client_id) ||
+    typeof claims.sub !== 'string' || !claims.sub ||
+    typeof claims.exp !== 'number' || claims.exp <= now ||
+    (typeof claims.nbf === 'number' && claims.nbf > now) || claims.token_type !== 'Bearer') {
     throw new UnauthorizedException('Invalid access token');
   }
+  return { sub: claims.sub };
 }
 
 @Injectable()
 export class AuthTokenService {
   private readonly issuer: string;
-  private readonly audience: string;
-  private readonly keySet: JWTVerifyGetKey | null;
+  private readonly projectId: string;
+  private readonly apiClientId: string;
+  private readonly apiClientSecret: string;
+  private readonly allowedWebClientIds: string[];
 
   constructor(config: ConfigService) {
-    this.issuer = config.get<string>('AUTH0_ISSUER_BASE_URL') ?? '';
-    this.audience = config.get<string>('AUTH0_AUDIENCE') ?? '';
-    this.keySet = this.issuer
-      ? createRemoteJWKSet(new URL('.well-known/jwks.json', this.issuer), { timeoutDuration: 5000 })
-      : null;
+    this.issuer = config.get<string>('ZITADEL_ISSUER_URL') ?? '';
+    this.projectId = config.get<string>('ZITADEL_PROJECT_ID') ?? '';
+    this.apiClientId = config.get<string>('ZITADEL_API_CLIENT_ID') ?? '';
+    this.apiClientSecret = config.get<string>('ZITADEL_API_CLIENT_SECRET') ?? '';
+    this.allowedWebClientIds = (config.get<string>('ZITADEL_WEB_CLIENT_IDS') ?? '').split(',').filter(Boolean);
   }
 
   verify(token: string): Promise<{ sub: string }> {
-    if (!this.keySet) throw new ServiceUnavailableException('Authentication unavailable');
-    return verifyAccessToken(token, this.keySet, this.issuer, this.audience);
+    if (!this.issuer || !this.apiClientId || !this.apiClientSecret) throw new ServiceUnavailableException('Authentication unavailable');
+    return verifyAccessToken(token, this.issuer, this.projectId, this.apiClientId, this.apiClientSecret, this.allowedWebClientIds);
   }
 }

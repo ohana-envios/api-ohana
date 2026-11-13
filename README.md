@@ -1,6 +1,6 @@
 # Ohana Envíos API
 
-API REST modular de Ohana Envíos. Incluye la base técnica (SCRUM-12), el modelo relacional inicial (SCRUM-13) y validación inicial de access tokens Auth0 (SCRUM-14). El tenant y los casos de uso operativos completos todavía requieren configuración e implementación.
+API REST modular de Ohana Envíos. Incluye la base técnica (SCRUM-12), el modelo relacional inicial (SCRUM-13) y validación de access tokens ZITADEL mediante introspección (SCRUM-14). El tenant y los casos de uso operativos completos todavía requieren configuración e implementación.
 
 ## Requisitos
 
@@ -69,12 +69,15 @@ Para ejecutar todo el proceso de verificación anterior con una sola orden y gua
 | `PORT` | Puerto HTTP; por defecto `3000`. |
 | `NODE_ENV` | `development`, `test` o `production`. |
 | `CORS_ORIGINS` | Orígenes web exactos, separados por comas. Vacío bloquea solicitudes CORS. |
-| `AUTH0_ISSUER_BASE_URL` | URL HTTPS del tenant Auth0; obligatoria en producción. |
-| `AUTH0_AUDIENCE` | Identifier de la API Auth0; obligatorio junto al emisor. |
+| `ZITADEL_ISSUER_URL` | URL HTTPS de la instancia ZITADEL; obligatoria en producción. |
+| `ZITADEL_PROJECT_ID` | ID numérico del proyecto de este ambiente. |
+| `ZITADEL_WEB_CLIENT_IDS` | Client IDs públicos autorizados a llamar a la API, separados por comas. |
+| `ZITADEL_API_CLIENT_ID` | Client ID de la aplicación API con autenticación Basic. |
+| `ZITADEL_API_CLIENT_SECRET` | Secreto de esa aplicación API; solo en servidor, nunca en web ni Git. |
 
 La configuración se valida al iniciar. El archivo `.env` y el cliente Prisma generado están excluidos de Git. `prisma.config.ts` sigue el formato de Prisma 7: la URL reside allí y la conexión de la aplicación usa `@prisma/adapter-pg`.
 
-`GET /api/auth/me` exige un access token JWT válido de Auth0. La guía [docs/auth0-setup.md](docs/auth0-setup.md) explica cómo registrar la API y la SPA, configurar correo verificado y MFA, y probar la validación. En desarrollo el health funciona sin tenant; el endpoint protegido devuelve 503 hasta configurar Auth0. En producción la API no arranca sin emisor y audiencia.
+`GET /api/auth/me` exige un access token activo de ZITADEL. La API lo introspecta y comprueba emisor, proyecto, cliente web y expiración; admite tokens JWT u opacos. La guía [docs/zitadel-setup.md](docs/zitadel-setup.md) explica la configuración de MFA y de cada ambiente. En desarrollo el health funciona sin instancia; el endpoint protegido devuelve 503 hasta configurar ZITADEL. En producción la API no arranca sin las cinco variables de ZITADEL.
 
 ## Migraciones y CI
 

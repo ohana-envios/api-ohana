@@ -1,34 +1,39 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { verifyAccessToken } from '../src/auth/auth-token.service.js';
 
-test('validates Auth0 access token signature, issuer, audience and expiry', async () => {
-  const { publicKey, privateKey } = await generateKeyPair('RS256');
-  const jwk = { ...await exportJWK(publicKey), kid: 'test-key', use: 'sig' };
-  const keySet = createLocalJWKSet({ keys: [jwk] });
-  const issuer = 'https://ohana-test.auth0.com/';
-  const audience = 'https://api.ohana.test';
-  const token = await new SignJWT({})
-    .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
-    .setIssuer(issuer)
-    .setAudience(audience)
-    .setSubject('auth0|test-user')
-    .setIssuedAt()
-    .setExpirationTime('5m')
-    .sign(privateKey);
+const issuer = 'https://ohana-test.zitadel.cloud';
+const projectId = '123456789';
+const webClientId = '987654321@ohana';
+const active = { active: true, iss: issuer, aud: [projectId], client_id: webClientId, sub: 'test-user', exp: Math.floor(Date.now() / 1000) + 300, token_type: 'Bearer' };
 
-  assert.deepEqual(await verifyAccessToken(token, keySet, issuer, audience), { sub: 'auth0|test-user' });
-  await assert.rejects(verifyAccessToken(token, keySet, issuer, 'wrong-audience'), /Invalid access token/);
-  await assert.rejects(verifyAccessToken(token, keySet, 'https://other.auth0.com/', audience), /Invalid access token/);
+function mock(claims: unknown, status = 200): typeof fetch {
+  return (async (url, init) => {
+    assert.equal(url, `${issuer}/oauth/v2/introspect`);
+    assert.equal(init?.method, 'POST');
+    assert.equal((init?.body as URLSearchParams).get('token'), 'access-token');
+    assert.equal((init?.headers as Record<string, string>).Authorization, `Basic ${Buffer.from('api-client:api-secret').toString('base64')}`);
+    return new Response(JSON.stringify(claims), { status });
+  }) as typeof fetch;
+}
 
-  const expired = await new SignJWT({})
-    .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
-    .setIssuer(issuer)
-    .setAudience(audience)
-    .setSubject('auth0|test-user')
-    .setIssuedAt(1)
-    .setExpirationTime(2)
-    .sign(privateKey);
-  await assert.rejects(verifyAccessToken(expired, keySet, issuer, audience), /Invalid access token/);
+const verify = (claims: unknown, status?: number) => verifyAccessToken('access-token', issuer, projectId, 'api-client', 'api-secret', [webClientId], mock(claims, status));
+
+test('accepts active introspected access token from the expected web client and project', async () => {
+  assert.deepEqual(await verify(active), { sub: 'test-user' });
+});
+
+test('rejects inactive, expired, wrong-project and wrong-client tokens', async () => {
+  for (const claims of [
+    { ...active, active: false },
+    { ...active, exp: 1 },
+    { ...active, aud: ['other-project'] },
+    { ...active, client_id: 'other-client' },
+    { ...active, token_type: 'ID' },
+  ]) await assert.rejects(verify(claims), /Invalid access token/);
+});
+
+test('fails closed when introspection is unavailable', async () => {
+  await assert.rejects(verify({}, 503), /Authentication unavailable/);
+  await assert.rejects(verifyAccessToken('access-token', issuer, projectId, 'api-client', 'api-secret', [webClientId], (() => Promise.reject(new Error('offline'))) as typeof fetch), /Authentication unavailable/);
 });

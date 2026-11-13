@@ -2,7 +2,7 @@
 
 La arquitectura objetivo documentada para Ohana usa un VPS Hostinger, Docker y PostgreSQL. Esta entrega deja configuración versionada para los tres ambientes. Los servidores, dominios, certificados, copias de seguridad y credenciales reales deben proporcionarse y comprobarse antes de declarar staging o producción operativos.
 
-| Ambiente | API y datos | Web | Auth0 | Propósito |
+| Ambiente | API y datos | Web | ZITADEL | Propósito |
 | --- | --- | --- | --- | --- |
 | Desarrollo | NestJS local + PostgreSQL 17 en Docker. | Vite local `localhost:5173`. | Tenant/aplicación de prueba. | Cambios rápidos y migraciones de desarrollo. |
 | Staging | Proyecto Compose `ohana-staging`, volumen PostgreSQL propio, API enlazada a `127.0.0.1:3101`. | Despliegue Vercel de staging o subdominio dedicado. | Aplicación y audiencia de staging. | Ensayo de migraciones, integración y aceptación. |
@@ -27,7 +27,7 @@ La contraseña pública `ohana_local_only` del ejemplo sirve solo para la base l
 
 ## Staging y producción en el VPS
 
-**Decisión de staging:** API y PostgreSQL correrán en contenedores Docker dentro del VPS Hostinger; la web usará un despliegue Preview de Vercel ligado a la rama `staging`. Crear `$HOME/ohana-staging/staging.env` **solo en el VPS**, tomando `infra/staging.env.example` como plantilla, con permisos `600`. Usar contraseñas únicas de alta entropía y caracteres URL-safe, coherentes entre `DB_PASSWORD` y `DATABASE_URL`. Completar dominios HTTPS, CORS y valores públicos de Auth0. Nunca copiar el `.env` local ni credenciales de producción a staging.
+**Decisión de staging:** API y PostgreSQL correrán en contenedores Docker dentro del VPS Hostinger; la web usará un despliegue Preview de Vercel ligado a la rama `staging`. Crear `$HOME/ohana-staging/staging.env` **solo en el VPS**, tomando `infra/staging.env.example` como plantilla, con permisos `600`. Usar contraseñas únicas de alta entropía y caracteres URL-safe, coherentes entre `DB_PASSWORD` y `DATABASE_URL`. Completar dominios HTTPS, CORS y valores públicos de ZITADEL. Nunca copiar el `.env` local ni credenciales de producción a staging.
 
 Cuando este cambio se integre en `staging`, `API CI` tendrá un job de CD: solo se ejecutará tras `verify` verde en un push a `staging` (o una ejecución manual seleccionando esa rama), usará el GitHub Environment `staging`, transferirá el código por SSH con host verificado, construirá la imagen en el VPS, respaldará PostgreSQL en `$HOME/ohana-staging/backups`, aplicará migraciones, actualizará la API y comprobará `/api/health` en loopback. **No despliega producción.** Los backups y releases quedan en el VPS; establecer retención y probar una restauración antes de usar datos importantes. Una migración que cambie la estructura de datos puede requerir una reversión planificada; el script no restaura automáticamente la base.
 
@@ -58,7 +58,7 @@ El reverse proxy del VPS debe dirigir `api-staging.<dominio>` a `127.0.0.1:3101`
 
 ## Web y móvil
 
-En Vercel, vincular `web-ohana` y usar `main` como Production Branch solo después de comprobar qué proyecto alimenta el sitio actual. Configurar para la rama Preview `staging` `VITE_API_BASE_URL`, `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID` y `VITE_AUTH0_AUDIENCE` con valores de staging; Vercel permite [variables Preview específicas por rama](https://vercel.com/docs/environment-variables). `VITE_API_BASE_URL` debe ser la URL HTTPS pública de la API en el VPS. Los orígenes web deben coincidir exactamente con `CORS_ORIGINS` y con las URLs permitidas de Auth0. Los cambios de variables `VITE_` requieren un nuevo build web. Staging y producción deben usar recursos Auth0 y bases de datos separados; si se comparte tenant, usar aplicaciones/API identificadas por ambiente y políticas probadas por separado.
+En Vercel, vincular `web-ohana` y usar `main` como Production Branch solo después de comprobar qué proyecto alimenta el sitio actual. Configurar para la rama Preview `staging` `VITE_API_BASE_URL`, `VITE_ZITADEL_ISSUER_URL`, `VITE_ZITADEL_CLIENT_ID` y `VITE_ZITADEL_PROJECT_ID` con valores de staging; Vercel permite [variables Preview específicas por rama](https://vercel.com/docs/environment-variables). `VITE_API_BASE_URL` debe ser la URL HTTPS pública de la API en el VPS. Los orígenes web deben coincidir exactamente con `CORS_ORIGINS` y con las URLs permitidas de ZITADEL. Los cambios de variables `VITE_` requieren un nuevo build web. Staging y producción deben usar recursos ZITADEL y bases de datos separados; si se comparte tenant, usar aplicaciones/API identificadas por ambiente y políticas probadas por separado.
 
 En móvil, `EXPO_PUBLIC_API_BASE_URL` apunta a una URL accesible desde el dispositivo. Las variables `EXPO_PUBLIC_` se incluyen en el bundle y no admiten secretos. Antes de distribuir builds, definir perfiles de desarrollo, staging y producción en EAS con identificadores de aplicación distintos y credenciales de tienda del equipo.
 

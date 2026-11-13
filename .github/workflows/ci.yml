@@ -2,7 +2,7 @@ name: API CI
 
 on:
   push:
-    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo, feat/scrum-14-auth0]
+    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo, feat/scrum-14-auth0, feat/scrum-14-oidc-zitadel]
   pull_request:
     branches: [dev, staging, main, feat/scrum-12-13-backend-modelo]
   workflow_dispatch:
