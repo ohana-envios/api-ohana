@@ -1,0 +1,57 @@
+name: API CI
+
+on:
+  push:
+    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo]
+  pull_request:
+    branches: [dev, staging, main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ohana_test
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_DB: ohana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ohana_test -d ohana_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PORT: 3100
+      DATABASE_URL: postgresql://ohana_test:test_only@localhost:5432/ohana_test
+      CORS_ORIGINS: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:validate
+      - run: npm run prisma:generate
+      - run: npm run prisma:migrate:deploy
+      - run: npm run prisma:migrate:status
+      - run: npm run prisma:migrate:diff
+      - run: npm run db:verify
+      - run: npm run build
+      - run: npm test
+      - name: HTTP health check against PostgreSQL
+        run: |
+          node dist/main.js &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://localhost:3100/api/health | grep -q '"database":"up"'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1

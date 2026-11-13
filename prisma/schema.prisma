@@ -1,0 +1,154 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  CUSTOMER
+  COURIER
+}
+
+enum CustomerType {
+  PERSON
+  COMPANY
+}
+
+enum ShipmentStatus {
+  PENDING
+  IN_ROUTE
+  DELIVERED
+  CANCELED
+}
+
+enum ShipmentPriority {
+  NORMAL
+  HIGH
+}
+
+model User {
+  id               String          @id @default(cuid())
+  externalAuthId   String?         @unique
+  email            String          @unique
+  displayName      String
+  role             UserRole        @default(OPERATOR)
+  enabled          Boolean         @default(true)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
+  createdShipments Shipment[]      @relation("ShipmentCreator")
+  shipmentEvents   ShipmentEvent[] @relation("EventActor")
+
+  @@index([role, enabled])
+}
+
+model Customer {
+  id             String       @id @default(cuid())
+  type           CustomerType
+  displayName    String
+  legalName      String?
+  documentType   String?
+  documentNumber String?
+  email          String?
+  phone          String?
+  enabled        Boolean      @default(true)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
+  addresses      Address[]
+  shipments      Shipment[]
+
+  @@index([documentType, documentNumber])
+  @@index([enabled, displayName])
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String?
+  street     String
+  number     String
+  locality   String
+  department String
+  reference  String?
+  notes      String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([customerId])
+}
+
+model Shipment {
+  id                    String           @id @default(cuid())
+  code                  String           @unique
+  customerId            String
+  createdByUserId       String?
+  senderName            String
+  senderPhone           String?
+  recipientName         String
+  recipientPhone        String?
+  pickupStreet          String
+  pickupNumber          String
+  pickupLocality        String
+  pickupDepartment      String
+  pickupReference       String?
+  deliveryStreet        String
+  deliveryNumber        String
+  deliveryLocality      String
+  deliveryDepartment    String
+  deliveryReference     String?
+  requestedPickupAt     DateTime?        @db.Timestamptz(3)
+  pickedUpAt            DateTime?        @db.Timestamptz(3)
+  deliveredAt           DateTime?        @db.Timestamptz(3)
+  status                ShipmentStatus   @default(PENDING)
+  priority              ShipmentPriority @default(NORMAL)
+  notes                 String?
+  createdAt             DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime         @updatedAt @db.Timestamptz(3)
+  customer              Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy             User?            @relation("ShipmentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  packages              Package[]
+  events                ShipmentEvent[]
+
+  @@index([customerId, createdAt])
+  @@index([status, priority, createdAt])
+  @@index([createdByUserId])
+}
+
+model Package {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  sequence    Int
+  description String?
+  weightKg    Decimal? @db.Decimal(10, 3)
+  lengthCm    Decimal? @db.Decimal(10, 2)
+  widthCm     Decimal? @db.Decimal(10, 2)
+  heightCm    Decimal? @db.Decimal(10, 2)
+  notes       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+
+  @@unique([shipmentId, sequence])
+}
+
+model ShipmentEvent {
+  id                String          @id @default(cuid())
+  shipmentId        String
+  actorUserId       String?
+  actorLabel        String
+  type              String
+  previousStatus    ShipmentStatus?
+  newStatus         ShipmentStatus?
+  notes             String?
+  occurredAt        DateTime        @default(now()) @db.Timestamptz(3)
+  shipment          Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  actor             User?           @relation("EventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([shipmentId, occurredAt])
+  @@index([actorUserId])
+}
