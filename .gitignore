@@ -7,3 +7,5 @@ coverage/
 src/generated/prisma/
 .DS_Store
 verification.local.log
+infra/staging.env
+infra/production.env

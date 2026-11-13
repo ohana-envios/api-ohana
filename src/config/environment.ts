@@ -29,7 +29,43 @@ export function validateEnvironment(values: Record<string, unknown>): Record<str
   }
   parseCorsOrigins(corsOrigins);
 
-  return { ...values, NODE_ENV: nodeEnv, PORT: port, DATABASE_URL: databaseUrl, CORS_ORIGINS: corsOrigins };
+  const issuerValue = values.ZITADEL_ISSUER_URL ?? '';
+  const projectValue = values.ZITADEL_PROJECT_ID ?? '';
+  const clientsValue = values.ZITADEL_WEB_CLIENT_IDS ?? '';
+  const apiClientId = values.ZITADEL_API_CLIENT_ID ?? '';
+  const apiClientSecret = values.ZITADEL_API_CLIENT_SECRET ?? '';
+  if ([issuerValue, projectValue, clientsValue, apiClientId, apiClientSecret].some((value) => typeof value !== 'string')) {
+    throw new Error('ZITADEL configuration must be strings');
+  }
+  const issuer = (issuerValue as string).trim();
+  const projectId = (projectValue as string).trim();
+  const clientIds = (clientsValue as string).split(',').map((client) => client.trim()).filter(Boolean);
+  if ([projectId, clientIds.length, (apiClientId as string).trim(), (apiClientSecret as string).trim()].some((value) => Boolean(issuer) !== Boolean(value))) {
+    throw new Error('All ZITADEL variables must be configured together');
+  }
+  if (nodeEnv === 'production' && !issuer) {
+    throw new Error('ZITADEL configuration is required in production');
+  }
+  if (issuer) {
+    let url: URL;
+    try {
+      url = new URL(issuer);
+    } catch {
+      throw new Error('ZITADEL_ISSUER_URL must be an HTTPS origin');
+    }
+    if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
+      throw new Error('ZITADEL_ISSUER_URL must be an HTTPS origin');
+    }
+  }
+
+  if (projectId && !/^\d+$/.test(projectId)) {
+    throw new Error('ZITADEL_PROJECT_ID must be a numeric project ID');
+  }
+  if (clientIds.some((client) => !/^[\w@-]+$/.test(client)) || (apiClientId as string).trim() && !/^[\w@-]+$/.test((apiClientId as string).trim())) {
+    throw new Error('ZITADEL client ID is invalid');
+  }
+
+  return { ...values, NODE_ENV: nodeEnv, PORT: port, DATABASE_URL: databaseUrl, CORS_ORIGINS: corsOrigins, ZITADEL_ISSUER_URL: issuer.replace(/\/$/, ''), ZITADEL_PROJECT_ID: projectId, ZITADEL_WEB_CLIENT_IDS: clientIds.join(','), ZITADEL_API_CLIENT_ID: (apiClientId as string).trim(), ZITADEL_API_CLIENT_SECRET: apiClientSecret };
 }
 
 export function parseCorsOrigins(value: string): string[] {
