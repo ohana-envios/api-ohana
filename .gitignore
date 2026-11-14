@@ -9,3 +9,6 @@ src/generated/prisma/
 verification.local.log
 infra/staging.env
 infra/production.env
+
+# Documentación privada de referencia
+/docs/private/
