@@ -1,5 +1,46 @@
 # SCRUM-20 — Base de acceso operativo (RF-16)
 
+## Invitación de identidad de un solo uso
+
+Decisión del usuario: vincular cuentas internas mediante invitación de un solo uso, no por asociación automática de correo. ADMIN genera un código para una cuenta interna deshabilitada y sin identidad; el código aleatorio se muestra una sola vez y vence a las 24 horas. Solo se almacena una huella SHA-256. Una nueva invitación invalida las anteriores. El administrador debe compartir el código por un canal seguro; el sistema no envía correos.
+
+La persona inicia sesión con una identidad del proveedor y presenta el código. La API valida el token existente y solicita al proveedor el mismo sujeto y correo verificado; ese correo debe coincidir con el de la cuenta prevista. El canje vincula el sujeto y registra el uso en una transacción, pero mantiene la cuenta deshabilitada hasta que ADMIN la habilite por separado. Emisión y uso conservan responsable, destino y fecha; la base impide borrar o reabrir el historial. La consulta del token y los registros no se exponen en listados.
+
+La integración se probó contra PostgreSQL aislado e identidad simulada: permisos, expiración, reemisión, correo incorrecto o no verificado, doble canje concurrente, historial y rollback. Falta probar con el tenant ZITADEL real, correo verificado, MFA y dispositivos; no se cambió el proveedor ni se aplicó la migración a bases compartidas. Sin conexión con el proveedor, el canje falla cerrado. Las funciones operativas de roles no administrativos continúan pendientes.
+
+
+## Alta local de usuarios internos
+
+`POST /api/users` permite a ADMIN crear un usuario interno ADMIN, OPERATOR o COURIER con nombre y correo; el correo se normaliza y se rechazan duplicados de cuentas sin distinguir mayúsculas. Se crea deshabilitado y sin identidad externa. La auditoría inmutable de creación guarda responsable, rol y fecha en la misma transacción. Ni el formulario ni el endpoint aceptan un identificador externo o el estado habilitado; tampoco crean credenciales. La API impide habilitar una cuenta sin identidad vinculada.
+
+La asociación segura con ZITADEL y la posterior habilitación todavía no están implementadas. La migración de auditoría se aplicó solo a PostgreSQL aislado. Las pruebas cubren permisos, roles, duplicados concurrentes, imposibilidad de habilitar usuarios no vinculados, proyección de datos y rollback ante fallo de auditoría.
+
+
+## Alta administrativa y acceso posterior de clientes
+
+`POST /api/customer-registrations/admin` permite a ADMIN crear una ficha habilitada sin crear cuenta de usuario. Acepta nombre y tipo, teléfono y correo opcionales; si se informa correo lo normaliza y rechaza duplicados de clientes o solicitudes. El alta y su auditoría inmutable se guardan en la misma transacción, con actor autenticado y fecha. El autorregistro también incorpora auditoría de creación. La comprobación de duplicados de alta se serializa entre ambos flujos; las ediciones de correo de fichas existentes todavía no imponen unicidad global.
+
+`PATCH /api/users/:id/access` permite habilitar o deshabilitar cuentas CUSTOMER solo si consta una solicitud con aprobación inicial completa. Conserva la ficha Cliente y registra auditoría. Las cuentas pendientes, las asociaciones históricas no comprobables y la conversión entre CUSTOMER y roles internos siguen bloqueadas. La habilitación inicial sigue siendo exclusiva del flujo de solicitudes.
+
+El alta administrativa, las auditorías, la duplicación concurrente, el rollback, la habilitación inicial y el cambio de acceso posterior se probaron en PostgreSQL aislado. La migración adicional no se aplicó a una base compartida. Faltan alta de usuarios internos y asociación autorizada de identidades existentes, además de verificar correo, MFA, recuperación y cierre de sesión con el proveedor real.
+
+
+## Autorregistro y habilitación: incremento en desarrollo
+
+El usuario confirmó que el correo electrónico impide solicitudes duplicadas. El autorregistro usa el correo normalizado y verificado recuperado desde UserInfo para el mismo `sub` del token validado; no acepta un correo del formulario. `POST /api/customer-registrations` crea en una transacción un Cliente y un Usuario CUSTOMER deshabilitados, asociados a una solicitud pendiente con correo único. También rechaza coincidencias con clientes o usuarios existentes sin asociarlos automáticamente. La clave única protege solicitudes concurrentes; la edición general de correo de clientes preexistentes no tiene una regla global de unicidad.
+
+`GET /api/customer-registrations/pending?page=1` lista solicitudes paginadas exclusivamente a ADMIN. `PATCH /api/customer-registrations/:id/approve` vuelve a verificar el administrador y habilita cliente y cuenta en la misma transacción que la auditoría de acceso y los datos de aprobación. Ante un fallo de auditoría no se habilita ninguno. Esto no implementa el alta por administrador ni la administración posterior de cuentas cliente. Se requiere validar la disponibilidad del scope `email`, correo verificado, MFA y registro externo en el tenant ZITADEL real. No se aplicaron migraciones a una base compartida.
+
+Pruebas: identidad con dobles y solicitud/habilitación HTTP en PostgreSQL aislado, incluidos duplicados concurrentes, usuario pendiente, permisos, aprobaciones simultáneas y rollback de auditoría. Las operaciones existentes de clientes y la guardia de sesión mantienen sus contratos; antes de habilitar futuras funciones de autogestión se debe comprobar explícitamente tanto la cuenta como el estado de su cliente asociado.
+
+
+## Actualización: acceso de cuentas internas
+
+`PATCH /api/users/:userId/access` permite a un administrador habilitado cambiar rol y estado de cuentas internas. Recibe los valores originales para detectar conflictos y registra responsable, fecha y valores anteriores y nuevos en la misma transacción. La migración aditiva crea la tabla de auditoría con protección contra modificación y borrado; se probó en PostgreSQL aislado, no se aplicó a una base compartida. La operación revalida al administrador y no permite quitarse su propio acceso administrativo. Los cambios a cuentas cliente y hacia ese rol están bloqueados hasta distinguir la habilitación inicial. Los valores originales detectan diferencias actuales, pero no cambios intermedios que vuelvan al mismo valor. La prueba de identidad usa introspección simulada; falta validación con ZITADEL y dispositivos reales.
+
+SCRUM-20 sigue incompleto: faltan registro y habilitación inicial de clientes, asociación Usuario–Cliente, altas y asociaciones autorizadas de identidad, y pruebas reales. La administración de acceso implementada no sustituye esos flujos.
+
+
 ## Objetivo y alcance
 
 Primer incremento en `cesarworkbench`: identificar al usuario local a partir del `sub` autenticado, comprobar su habilitación y aplicar autorización explícita por rol. RF-16, RN-CU15-03/06 y RN-CU19-01/04 fundamentan estos controles.

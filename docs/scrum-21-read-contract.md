@@ -1,5 +1,26 @@
 # SCRUM-21 — Primer incremento: consulta de clientes
 
+## Actualización: correos de clientes duplicados
+
+Por decisión del usuario, las altas y modificaciones que asignan un correo comparan sin distinguir mayúsculas ni espacios externos y rechazan coincidencias con otra ficha o con el correo reservado por otra solicitud. Correo vacío continúa permitido. Los dos flujos de alta y la edición administrativa o propia toman el mismo bloqueo transaccional antes de comparar y escribir, por lo que las solicitudes concurrentes a esta API no crean nuevos duplicados. Ante coincidencia la edición responde 409 con código `CUSTOMER_EMAIL_DUPLICATE`, sin identificar a la otra persona.
+
+Las fichas históricas con correos repetidos se conservan y pueden editarse sin cambiar la identidad normalizada de su correo; también se les puede quitar o corregir el correo. El índice aditivo es de búsqueda, no de unicidad, y no modifica filas. La regla se garantiza para las escrituras que pasan por estos servicios y su bloqueo compartido: escrituras directas o versiones anteriores de la API pueden omitirla. Antes de aplicarla en un ambiente compartido, coordinar despliegue con el compañero y revisar duplicados existentes sin corregirlos automáticamente. La migración solo se probó en PostgreSQL aislado, incluso con duplicados preexistentes. Las pantallas muestran un mensaje de correo inválido sin descartar el resto del formulario.
+
+
+## Actualización: autogestión habilitada
+
+Por decisión del usuario se incorpora autogestión para clientes aprobados. `GET/PATCH /api/my-customer` y las rutas de direcciones bajo `/api/my-customer/addresses` obtienen el cliente exclusivamente desde la asociación del usuario autenticado; no reciben un identificador de cliente. La API exige cuenta CUSTOMER habilitada, asociación aprobada y cliente habilitado, y vuelve a comprobar esas condiciones en la transacción de escritura. Las direcciones deben pertenecer al cliente y debe permanecer al menos una activa. Las ediciones y direcciones generan la misma auditoría que el flujo administrativo. No se habilitan operaciones sobre la ficha comercial completa ni directorios de otros clientes.
+
+Las pruebas HTTP con PostgreSQL aislado cubren acceso propio, intentos entre clientes, usuario/cliente deshabilitado, aprobación pendiente, última dirección activa y auditoría. Falta validar con ZITADEL real y la interacción visual en web y dispositivos. Las asociaciones heredadas sin una aprobación registral verificable no habilitan autogestión.
+
+
+## Actualización: estado y auditoría de clientes y direcciones
+
+`PATCH /api/customers/:customerId/status` admite `{ enabled: boolean }` para ADMIN habilitado. Preserva direcciones, historial y cuenta; las solicitudes de cliente pendientes deben aprobarse por CU18 y no pueden reactivarse desde este endpoint. El cambio y su auditoría inmutable (responsable, fecha y estado anterior/nuevo) son atómicos e idempotentes.
+
+La edición de datos, creación/edición de direcciones y cambio de estado de direcciones registran en la misma transacción una auditoría inmutable con actor, fecha, operación y campos modificados; no duplica los valores personales. Se revalida al administrador en la transacción. Fallar la auditoría revierte la operación. Las migraciones se probaron únicamente en PostgreSQL aislado y requieren coordinación antes de aplicarse a un ambiente compartido. Las pruebas cubren permisos, concurrencia, último domicilio activo, historial y rollback; faltan la prueba con ZITADEL y revisión de interfaces reales.
+
+
 ## Alta y edición de direcciones
 
 `POST /api/customers/:customerId/addresses` agrega una dirección y `PATCH /api/customers/:customerId/addresses/:addressId` edita una dirección perteneciente a ese cliente. Ambas operaciones exigen `ADMIN` habilitado. El cuerpo contiene exactamente `label`, `street`, `number`, `locality`, `department`, `reference` y `notes` como textos; calle, número, localidad y departamento son obligatorios. Se recortan espacios y los opcionales vacíos se guardan como `null`. Los límites coinciden con los formularios web y móvil. Para editar se agrega `expected` con los siete valores originales; una versión desactualizada produce 409 y un identificador inexistente o de otro cliente produce 404. Se devuelve la ficha del cliente actualizada.

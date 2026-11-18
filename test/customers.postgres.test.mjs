@@ -109,6 +109,22 @@ test('customer and address operations persist and reject stale or unauthorized c
     assert.equal(final.addresses.length, 2);
     assert.equal(final.addresses.filter((item) => item.active).length, 1);
     assert.equal((await prisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).pickupStreet, created.street);
+    const actor = await prisma.user.findUniqueOrThrow({ where: { externalAuthId: `test-admin-${suffix}` } });
+    const audits = await prisma.customerDataAudit.findMany({ where: { customerId: customer.id } });
+    for (const action of ['CUSTOMER_EDIT', 'ADDRESS_CREATE', 'ADDRESS_EDIT', 'ADDRESS_STATUS']) assert.ok(audits.some(item => item.action === action));
+    assert.ok(audits.every(item => item.actorUserId === actor.id));
+    assert.ok(audits.every(item => item.fields.every(field => !field.includes('@'))));
+    await assert.rejects(prisma.customerDataAudit.delete({ where: { id: audits[0].id } }));
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION test_reject_customer_data_audit() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'test audit failure'; END; $$ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER "test_reject_customer_data_audit" BEFORE INSERT ON "CustomerDataAudit" FOR EACH ROW WHEN (NEW."customerId" = '${customer.id}') EXECUTE FUNCTION test_reject_customer_data_audit()`);
+    try {
+      assert.equal((await addAddress({ ...addressDraft, street: 'Revertida' })).status, 500);
+      assert.equal(await prisma.address.count({ where: { customerId: customer.id, street: 'Revertida' } }), 0);
+    } finally {
+      await prisma.$executeRawUnsafe('DROP TRIGGER "test_reject_customer_data_audit" ON "CustomerDataAudit"');
+      await prisma.$executeRawUnsafe('DROP FUNCTION test_reject_customer_data_audit()');
+    }
+
   } finally {
     await app.close();
   }

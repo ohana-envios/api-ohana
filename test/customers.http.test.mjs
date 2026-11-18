@@ -17,7 +17,7 @@ test('customer reads require an enabled administrator and validate the HTTP cont
   prisma.onModuleInit = async () => {};
   prisma.user.findUnique = async ({ where }) => where.externalAuthId === 'missing' ? null : {
     id: 'u1', email: 'test@example.invalid', displayName: 'Test',
-    role: where.externalAuthId === 'admin' || where.externalAuthId === 'disabled' ? 'ADMIN' :
+    role: where.id === 'u1' || where.externalAuthId === 'admin' || where.externalAuthId === 'disabled' ? 'ADMIN' :
       where.externalAuthId === 'operator' ? 'OPERATOR' : where.externalAuthId === 'courier' ? 'COURIER' : 'CUSTOMER',
     enabled: where.externalAuthId !== 'disabled',
   };
@@ -30,6 +30,11 @@ test('customer reads require an enabled administrator and validate the HTTP cont
   prisma.customer.findMany = async () => { reads++; return [{ ...customer, _count: { addresses: 1 }, privateField: 'hidden' }]; };
   prisma.customer.count = async () => { reads++; return 1; };
   prisma.customer.findUnique = async ({ where }) => { reads++; return where.id === customer.id ? { ...customer, addresses: [address], privateField: 'hidden' } : null; };
+  prisma.$transaction = async (callback) => callback(prisma);
+  prisma.$executeRaw = async () => 1;
+  prisma.$queryRaw = async (strings) => strings.join('').includes('FROM "Customer"') ? [] : [{ id: 'u1' }];
+  prisma.customerRegistration.findFirst = async () => null;
+  prisma.customerDataAudit.create = async () => ({});
   let writes = 0;
   prisma.customer.update = async ({ where, data }) => {
     writes++;

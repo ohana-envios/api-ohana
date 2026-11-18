@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import type { OperationalUserRequest } from '../users/users.types.js';
 import { OperationalUserGuard } from '../users/operational-user.guard.js';
 import { RequireRoles } from '../users/require-roles.decorator.js';
 import { RolesGuard } from '../users/roles.guard.js';
@@ -28,25 +29,33 @@ export class CustomersController {
 
   @Patch(':customerId')
   @Header('Cache-Control', 'no-store')
-  update(@Param('customerId') customerId: string, @Body() body: unknown): Promise<CustomerDetail> {
-    return this.customers.update(customerId, parseCustomerEdit(body));
+  update(@Param('customerId') customerId: string, @Body() body: unknown, @Req() request: OperationalUserRequest): Promise<CustomerDetail> {
+    return this.customers.update(customerId, parseCustomerEdit(body), request.currentUser!.id);
+  }
+
+  @Patch(':customerId/status')
+  @Header('Cache-Control', 'no-store')
+  setCustomerStatus(@Param('customerId') customerId: string, @Body() body: unknown, @Req() request: OperationalUserRequest): Promise<CustomerDetail> {
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || typeof (body as { enabled?: unknown }).enabled !== 'boolean')
+      throw new BadRequestException('Estado de cliente inválido');
+    return this.customers.setCustomerStatus(request.currentUser!.id, customerId, (body as { enabled: boolean }).enabled);
   }
 
   @Post(':customerId/addresses')
   @Header('Cache-Control', 'no-store')
-  addAddress(@Param('customerId') customerId: string, @Body() body: unknown): Promise<CustomerDetail> {
-    return this.customers.addAddress(customerId, parseAddress(body, false));
+  addAddress(@Param('customerId') customerId: string, @Body() body: unknown, @Req() request: OperationalUserRequest): Promise<CustomerDetail> {
+    return this.customers.addAddress(customerId, parseAddress(body, false), request.currentUser!.id);
   }
 
   @Patch(':customerId/addresses/:addressId')
   @Header('Cache-Control', 'no-store')
-  updateAddress(@Param('customerId') customerId: string, @Param('addressId') addressId: string, @Body() body: unknown): Promise<CustomerDetail> {
-    return this.customers.updateAddress(customerId, addressId, parseAddress(body, true));
+  updateAddress(@Param('customerId') customerId: string, @Param('addressId') addressId: string, @Body() body: unknown, @Req() request: OperationalUserRequest): Promise<CustomerDetail> {
+    return this.customers.updateAddress(customerId, addressId, parseAddress(body, true), request.currentUser!.id);
   }
 
   @Patch(':customerId/addresses/:addressId/status')
   @Header('Cache-Control', 'no-store')
-  setAddressStatus(@Param('customerId') customerId: string, @Param('addressId') addressId: string, @Body() body: unknown): Promise<CustomerDetail> {
-    return this.customers.setAddressStatus(customerId, addressId, parseAddressStatus(body));
+  setAddressStatus(@Param('customerId') customerId: string, @Param('addressId') addressId: string, @Body() body: unknown, @Req() request: OperationalUserRequest): Promise<CustomerDetail> {
+    return this.customers.setAddressStatus(customerId, addressId, parseAddressStatus(body), request.currentUser!.id);
   }
 }
