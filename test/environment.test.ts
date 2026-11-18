@@ -34,3 +34,12 @@ test('ZITADEL issuer, project and clients are paired and production requires the
   assert.equal(config.ZITADEL_ISSUER_URL, 'https://ohana-test.zitadel.cloud');
   assert.equal(config.ZITADEL_WEB_CLIENT_IDS, '456@ohana,789@ohana');
 });
+
+test('mobile client IDs are optional, validated and require the existing ZITADEL configuration', () => {
+  const database = { DATABASE_URL: 'postgresql://localhost:5432/ohana_test' };
+  assert.throws(() => validateEnvironment({ ...database, ZITADEL_MOBILE_CLIENT_IDS: 'mobile@ohana' }), /configured together/);
+  const base = { ...database, ZITADEL_ISSUER_URL: 'https://example.com', ZITADEL_PROJECT_ID: '123', ZITADEL_WEB_CLIENT_IDS: 'web@ohana', ZITADEL_API_CLIENT_ID: 'api@ohana', ZITADEL_API_CLIENT_SECRET: 'secret' };
+  assert.throws(() => validateEnvironment({ ...base, ZITADEL_MOBILE_CLIENT_IDS: 'bad client' }), /client ID is invalid/);
+  assert.equal(validateEnvironment({ ...base, ZITADEL_MOBILE_CLIENT_IDS: 'mobile@ohana, other@ohana' }).ZITADEL_MOBILE_CLIENT_IDS, 'mobile@ohana,other@ohana');
+  assert.equal(validateEnvironment(base).ZITADEL_MOBILE_CLIENT_IDS, '');
+});

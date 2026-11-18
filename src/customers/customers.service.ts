@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CustomerDetail, CustomerList, CustomerListQuery, CustomerSummary } from './customers.types.js';
+import type { CustomerEdit } from './customers.edit.js';
+import type { AddressEdit, AddressFields } from './customers.address.js';
 
 const customerFields = {
   id: true, type: true, displayName: true, legalName: true,
@@ -10,10 +12,12 @@ const customerFields = {
 
 const addressFields = {
   id: true, label: true, street: true, number: true, locality: true,
-  department: true, reference: true, notes: true,
+  department: true, reference: true, notes: true, active: true,
 } as const satisfies Prisma.AddressSelect;
 
 type CustomerRecord = Prisma.CustomerGetPayload<{ select: typeof customerFields }>;
+const detailFields = { ...customerFields, addresses: { select: addressFields, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } } as const satisfies Prisma.CustomerSelect;
+type CustomerDetailRecord = Prisma.CustomerGetPayload<{ select: typeof detailFields }>;
 
 function summary(record: CustomerRecord, addressCount: number): CustomerSummary {
   return {
@@ -24,7 +28,18 @@ function summary(record: CustomerRecord, addressCount: number): CustomerSummary 
   };
 }
 
-/** Administrative reads only. The future HTTP boundary must enforce authorization. */
+function detail(record: CustomerDetailRecord): CustomerDetail {
+  return {
+    ...summary(record, record.addresses.length),
+    addresses: record.addresses.map((address) => ({
+      id: address.id, label: address.label, street: address.street, number: address.number,
+      locality: address.locality, department: address.department,
+      reference: address.reference, notes: address.notes, active: address.active,
+    })),
+  };
+}
+
+/** Administrative operations; callers must enforce authorization. */
 @Injectable()
 export class CustomersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -57,19 +72,70 @@ export class CustomersService {
   async get(id: string): Promise<CustomerDetail> {
     const record = await this.prisma.customer.findUnique({
       where: { id },
-      select: {
-        ...customerFields,
-        addresses: { select: addressFields, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
-      },
+      select: detailFields,
     });
     if (!record) throw new NotFoundException('Cliente no encontrado');
-    return {
-      ...summary(record, record.addresses.length),
-      addresses: record.addresses.map((address) => ({
-        id: address.id, label: address.label, street: address.street, number: address.number,
-        locality: address.locality, department: address.department,
-        reference: address.reference, notes: address.notes,
-      })),
-    };
+    return detail(record);
+  }
+
+  async update(id: string, data: CustomerEdit): Promise<CustomerDetail> {
+    const { expected, ...changes } = data;
+    try {
+      const record = await this.prisma.customer.update({ where: { id, ...expected }, data: changes, select: detailFields });
+      return detail(record);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') {
+        const current = await this.prisma.customer.findUnique({ where: { id }, select: { id: true } });
+        if (!current) throw new NotFoundException('Cliente no encontrado');
+        throw new ConflictException('La ficha cambió desde que la abriste. Volvé a cargarla antes de guardar.');
+      }
+      throw error;
+    }
+  }
+
+  async addAddress(customerId: string, data: AddressFields): Promise<CustomerDetail> {
+    try {
+      const record = await this.prisma.customer.update({ where: { id: customerId }, data: { addresses: { create: data } }, select: detailFields });
+      return detail(record);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') throw new NotFoundException('Cliente no encontrado');
+      throw error;
+    }
+  }
+
+  async updateAddress(customerId: string, addressId: string, data: AddressEdit): Promise<CustomerDetail> {
+    const { expected, ...changes } = data;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.address.update({ where: { id: addressId, customerId, ...expected }, data: changes });
+        const record = await tx.customer.findUniqueOrThrow({ where: { id: customerId }, select: detailFields });
+        return detail(record);
+      });
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') {
+        const current = await this.prisma.address.findFirst({ where: { id: addressId, customerId }, select: { id: true } });
+        if (!current) throw new NotFoundException('Dirección no encontrada');
+        throw new ConflictException('La dirección cambió desde que la abriste. Volvé a cargarla antes de guardar.');
+      }
+      throw error;
+    }
+  }
+
+  async setAddressStatus(customerId: string, addressId: string, active: boolean): Promise<CustomerDetail> {
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize status changes per customer before counting active addresses.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Customer" WHERE "id" = ${customerId} FOR UPDATE`;
+      if (locked.length === 0) throw new NotFoundException('Cliente no encontrado');
+      const address = await tx.address.findFirst({ where: { id: addressId, customerId }, select: { id: true, active: true } });
+      if (!address) throw new NotFoundException('Dirección no encontrada');
+      if (address.active !== active) {
+        if (!active && await tx.address.count({ where: { customerId, active: true } }) <= 1) {
+          throw new ConflictException('Debe quedar al menos una dirección activa.');
+        }
+        await tx.address.update({ where: { id: addressId, customerId }, data: { active } });
+      }
+      const customer = await tx.customer.findUniqueOrThrow({ where: { id: customerId }, select: detailFields });
+      return detail(customer);
+    });
   }
 }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { verifyAccessToken } from '../src/auth/auth-token.service.js';
+import { AuthTokenService } from '../src/auth/auth-token.service.js';
+import { ConfigService } from '@nestjs/config';
 
 const issuer = 'https://ohana-test.zitadel.cloud';
 const projectId = '123456789';
@@ -36,4 +38,24 @@ test('rejects inactive, expired, wrong-project and wrong-client tokens', async (
 test('fails closed when introspection is unavailable', async () => {
   await assert.rejects(verify({}, 503), /Authentication unavailable/);
   await assert.rejects(verifyAccessToken('access-token', issuer, projectId, 'api-client', 'api-secret', [webClientId], (() => Promise.reject(new Error('offline'))) as typeof fetch), /Authentication unavailable/);
+});
+
+test('configured mobile clients are accepted alongside web clients while other clients remain rejected', async () => {
+  const values: Record<string, string> = {
+    ZITADEL_ISSUER_URL: issuer, ZITADEL_PROJECT_ID: projectId,
+    ZITADEL_API_CLIENT_ID: 'api-client', ZITADEL_API_CLIENT_SECRET: 'api-secret',
+    ZITADEL_WEB_CLIENT_IDS: webClientId, ZITADEL_MOBILE_CLIENT_IDS: 'mobile@ohana',
+  };
+  const service = new AuthTokenService(new ConfigService(values));
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = mock({ ...active, client_id: 'mobile@ohana' });
+    assert.deepEqual(await service.verify('access-token'), { sub: 'test-user' });
+    globalThis.fetch = mock({ ...active, client_id: webClientId });
+    assert.deepEqual(await service.verify('access-token'), { sub: 'test-user' });
+    globalThis.fetch = mock({ ...active, client_id: 'unknown@ohana' });
+    await assert.rejects(service.verify('access-token'), /Invalid access token/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

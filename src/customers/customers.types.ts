@@ -20,6 +20,7 @@ export type CustomerAddress = {
   department: string;
   reference: string | null;
   notes: string | null;
+  active: boolean;
 };
 
 export type CustomerDetail = CustomerSummary & { addresses: CustomerAddress[] };

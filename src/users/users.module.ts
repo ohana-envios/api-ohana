@@ -1,0 +1,15 @@
+import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module.js';
+import { PrismaModule } from '../prisma/prisma.module.js';
+import { OperationalUserGuard } from './operational-user.guard.js';
+import { RolesGuard } from './roles.guard.js';
+import { UsersController } from './users.controller.js';
+import { UsersService } from './users.service.js';
+
+@Module({
+  imports: [AuthModule, PrismaModule],
+  controllers: [UsersController],
+  providers: [UsersService, OperationalUserGuard, RolesGuard],
+  exports: [UsersService, OperationalUserGuard, RolesGuard, AuthModule],
+})
+export class UsersModule {}

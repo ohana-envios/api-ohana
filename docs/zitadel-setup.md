@@ -1,5 +1,11 @@
 # ZITADEL Cloud Free — OIDC y MFA de Ohana
 
+## Lectura administrativa móvil preparada
+
+La API acepta, además de la lista web existente, identificadores opcionales en `ZITADEL_MOBILE_CLIENT_IDS`, separados por comas. Cada token continúa pasando por introspección y las mismas comprobaciones de emisor, audiencia, cliente, vencimiento, usuario habilitado y rol. Una lista vacía no autoriza ningún cliente móvil nuevo. El alta de la aplicación nativa y la configuración del tenant corresponden al equipo responsable; no se modificaron servicios remotos. Registrar como URI de retorno la URI exacta generada para el build nativo (`ohanaenvios://auth/callback` en la configuración prevista) y verificarla en dispositivo.
+
+La app móvil solicita autorización mediante código con PKCE, sin secreto de cliente; consulta `/api/users/me` y muestra el directorio solo a `ADMIN` habilitado. El token de acceso vive únicamente en memoria, se descarta al salir del panel y al vencer; esta salida local no asegura el cierre de la sesión del navegador de ZITADEL. No se guardan refresh tokens. Pendiente validar con tenant real, redirección nativa, cuenta de prueba y dispositivos. Referencias oficiales: https://docs.expo.dev/versions/v58.0.0/sdk/auth-session/ y https://zitadel.com/docs/guides/manage/console/applications-overview.
+
 El plan Free anuncia 100 usuarios activos diarios y funciones de seguridad sin costo. Confirmar el consumo real antes de depender del límite. Referencia: https://zitadel.com/pricing
 
 ## Instancia y ambientes

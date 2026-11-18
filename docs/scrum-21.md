@@ -1,5 +1,7 @@
 # SCRUM-21 — Gestionar clientes y direcciones habituales (RF-17)
 
+Actualización: la lectura administrativa de clientes y sus direcciones está registrada en la API para el rol `ADMIN` habilitado, según la decisión del usuario. El estado vigente, las pruebas y los límites están en [contrato de lectura](scrum-21-read-contract.md). Las referencias históricas de este documento a un módulo sin rutas describen etapas anteriores.
+
 Estado: análisis contrastado con RF-17, CU12 y las vistas M32, M33 y M43 del documento provisorio aportado el 14/11/2026. Primer incremento de lectura preparado en `cesarworkbench`; la integración y el cumplimiento completo de RF-17 siguen pendientes.
 
 ## Incremento actual

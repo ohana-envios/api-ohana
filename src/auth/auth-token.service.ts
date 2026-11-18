@@ -55,7 +55,8 @@ export class AuthTokenService {
     this.projectId = config.get<string>('ZITADEL_PROJECT_ID') ?? '';
     this.apiClientId = config.get<string>('ZITADEL_API_CLIENT_ID') ?? '';
     this.apiClientSecret = config.get<string>('ZITADEL_API_CLIENT_SECRET') ?? '';
-    this.allowedWebClientIds = (config.get<string>('ZITADEL_WEB_CLIENT_IDS') ?? '').split(',').filter(Boolean);
+    this.allowedWebClientIds = [config.get<string>('ZITADEL_WEB_CLIENT_IDS') ?? '', config.get<string>('ZITADEL_MOBILE_CLIENT_IDS') ?? '']
+      .flatMap((clients) => clients.split(',').map((client) => client.trim()).filter(Boolean));
   }
 
   verify(token: string): Promise<{ sub: string }> {

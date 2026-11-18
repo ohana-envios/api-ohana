@@ -55,7 +55,7 @@ test('an empty customer list has no fabricated records or pages', async () => {
 test('customer detail exposes structured addresses and only the agreed fields', async () => {
   const address = {
     id: 'address-1', label: 'Local', street: 'Calle de ejemplo', number: '123',
-    locality: 'Centro', department: 'Montevideo', reference: null, notes: null,
+    locality: 'Centro', department: 'Montevideo', reference: null, notes: null, active: true,
   };
   const service = new CustomersService({ customer: {
     findUnique: async () => ({ ...customer, addresses: [{ ...address, customerId: 'customer-1' }], internal: 'private' }),
