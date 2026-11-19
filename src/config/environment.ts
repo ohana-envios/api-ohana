@@ -32,14 +32,26 @@ export function validateEnvironment(values: Record<string, unknown>): Record<str
   const issuerValue = values.ZITADEL_ISSUER_URL ?? '';
   const projectValue = values.ZITADEL_PROJECT_ID ?? '';
   const clientsValue = values.ZITADEL_WEB_CLIENT_IDS ?? '';
+  const mobileClientsValue = values.ZITADEL_MOBILE_CLIENT_IDS ?? '';
   const apiClientId = values.ZITADEL_API_CLIENT_ID ?? '';
   const apiClientSecret = values.ZITADEL_API_CLIENT_SECRET ?? '';
-  if ([issuerValue, projectValue, clientsValue, apiClientId, apiClientSecret].some((value) => typeof value !== 'string')) {
+  const orgIdValue = values.ZITADEL_ORG_ID ?? '';
+  const userServiceTokenValue = values.ZITADEL_USER_SERVICE_TOKEN ?? '';
+  const userInviterSubjectsValue = values.ZITADEL_USER_INVITER_SUBJECTS ?? '';
+  if ([issuerValue, projectValue, clientsValue, mobileClientsValue, apiClientId, apiClientSecret].some((value) => typeof value !== 'string')) {
     throw new Error('ZITADEL configuration must be strings');
+  }
+  if ([orgIdValue, userServiceTokenValue, userInviterSubjectsValue].some((value) => typeof value !== 'string')) {
+    throw new Error('ZITADEL user provisioning configuration must be strings');
   }
   const issuer = (issuerValue as string).trim();
   const projectId = (projectValue as string).trim();
   const clientIds = (clientsValue as string).split(',').map((client) => client.trim()).filter(Boolean);
+  const mobileClientIds = (mobileClientsValue as string).split(',').map((client) => client.trim()).filter(Boolean);
+  if (mobileClientIds.length && !issuer) throw new Error('All ZITADEL variables must be configured together');
+  const orgId = (orgIdValue as string).trim();
+  const userServiceToken = (userServiceTokenValue as string).trim();
+  const userInviterSubjects = (userInviterSubjectsValue as string).split(',').map((subject) => subject.trim()).filter(Boolean);
   if ([projectId, clientIds.length, (apiClientId as string).trim(), (apiClientSecret as string).trim()].some((value) => Boolean(issuer) !== Boolean(value))) {
     throw new Error('All ZITADEL variables must be configured together');
   }
@@ -61,11 +73,20 @@ export function validateEnvironment(values: Record<string, unknown>): Record<str
   if (projectId && !/^\d+$/.test(projectId)) {
     throw new Error('ZITADEL_PROJECT_ID must be a numeric project ID');
   }
-  if (clientIds.some((client) => !/^[\w@-]+$/.test(client)) || (apiClientId as string).trim() && !/^[\w@-]+$/.test((apiClientId as string).trim())) {
+  if ([orgId, userServiceToken, userInviterSubjects.length].some((value) => Boolean(orgId) !== Boolean(value))) {
+    throw new Error('ZITADEL_ORG_ID, ZITADEL_USER_SERVICE_TOKEN and ZITADEL_USER_INVITER_SUBJECTS must be configured together');
+  }
+  if (orgId && !issuer) {
+    throw new Error('ZITADEL user provisioning requires ZITADEL_ISSUER_URL');
+  }
+  if (orgId && !/^\d+$/.test(orgId)) {
+    throw new Error('ZITADEL_ORG_ID must be a numeric organization ID');
+  }
+  if ([...clientIds, ...mobileClientIds].some((client) => !/^[\w@-]+$/.test(client)) || (apiClientId as string).trim() && !/^[\w@-]+$/.test((apiClientId as string).trim())) {
     throw new Error('ZITADEL client ID is invalid');
   }
 
-  return { ...values, NODE_ENV: nodeEnv, PORT: port, DATABASE_URL: databaseUrl, CORS_ORIGINS: corsOrigins, ZITADEL_ISSUER_URL: issuer.replace(/\/$/, ''), ZITADEL_PROJECT_ID: projectId, ZITADEL_WEB_CLIENT_IDS: clientIds.join(','), ZITADEL_API_CLIENT_ID: (apiClientId as string).trim(), ZITADEL_API_CLIENT_SECRET: apiClientSecret };
+  return { ...values, NODE_ENV: nodeEnv, PORT: port, DATABASE_URL: databaseUrl, CORS_ORIGINS: corsOrigins, ZITADEL_ISSUER_URL: issuer.replace(/\/$/, ''), ZITADEL_PROJECT_ID: projectId, ZITADEL_WEB_CLIENT_IDS: clientIds.join(','), ZITADEL_MOBILE_CLIENT_IDS: mobileClientIds.join(','), ZITADEL_API_CLIENT_ID: (apiClientId as string).trim(), ZITADEL_API_CLIENT_SECRET: apiClientSecret, ZITADEL_ORG_ID: orgId, ZITADEL_USER_SERVICE_TOKEN: userServiceToken, ZITADEL_USER_INVITER_SUBJECTS: userInviterSubjects.join(',') };
 }
 
 export function parseCorsOrigins(value: string): string[] {

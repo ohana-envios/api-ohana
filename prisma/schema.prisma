@@ -43,8 +43,63 @@ model User {
   updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
   createdShipments Shipment[]      @relation("ShipmentCreator")
   shipmentEvents   ShipmentEvent[] @relation("EventActor")
+  customerRegistration CustomerRegistration? @relation("RegistrationUser")
+  approvedRegistrations CustomerRegistration[] @relation("RegistrationApprover")
+  customerDataChanges CustomerDataAudit[] @relation("CustomerDataActor")
+  customerStatusChanges CustomerStatusAudit[] @relation("CustomerStatusActor")
+  customerCreations CustomerCreationAudit[] @relation("CustomerCreationActor")
+  invitationsReceived UserInvitation[] @relation("InvitationTarget")
+  invitationsIssued UserInvitation[] @relation("InvitationIssuer")
+  userCreationsMade UserCreationAudit[] @relation("UserCreationActor")
+  creationAudit UserCreationAudit? @relation("UserCreationTarget")
+  accessChangesMade UserAccessAudit[] @relation("AccessChangeActor")
+  accessChangesReceived UserAccessAudit[] @relation("AccessChangeTarget")
 
   @@index([role, enabled])
+}
+
+model UserInvitation {
+  id           String   @id @default(cuid())
+  targetUserId String
+  issuedById   String
+  tokenHash    String   @unique
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime @db.Timestamptz(3)
+  usedAt       DateTime? @db.Timestamptz(3)
+  claimedSubject String?
+  revokedAt    DateTime? @db.Timestamptz(3)
+  target       User @relation("InvitationTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  issuer       User @relation("InvitationIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+
+  @@index([targetUserId, createdAt])
+}
+
+model UserCreationAudit {
+  id           String   @id @default(cuid())
+  actorUserId  String
+  targetUserId String   @unique
+  role         UserRole
+  occurredAt   DateTime @default(now()) @db.Timestamptz(3)
+  actor        User @relation("UserCreationActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  target       User @relation("UserCreationTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, occurredAt])
+}
+
+model UserAccessAudit {
+  id              String   @id @default(cuid())
+  actorUserId     String
+  targetUserId    String
+  previousRole    UserRole
+  previousEnabled Boolean
+  nextRole        UserRole
+  nextEnabled     Boolean
+  occurredAt      DateTime @default(now()) @db.Timestamptz(3)
+  actor           User     @relation("AccessChangeActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  target          User     @relation("AccessChangeTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+
+  @@index([targetUserId, occurredAt])
+  @@index([actorUserId, occurredAt])
 }
 
 model Customer {
@@ -61,9 +116,70 @@ model Customer {
   updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
   addresses      Address[]
   shipments      Shipment[]
+  registration   CustomerRegistration?
+  creationAudit  CustomerCreationAudit?
+  statusChanges  CustomerStatusAudit[]
+  dataChanges    CustomerDataAudit[]
 
   @@index([documentType, documentNumber])
   @@index([enabled, displayName])
+}
+
+// A self-registration is separate from both the customer and its access account.
+model CustomerRegistration {
+  id          String   @id @default(cuid())
+  customerId  String   @unique
+  userId      String   @unique
+  emailKey    String   @unique
+  pending     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  approvedAt  DateTime? @db.Timestamptz(3)
+  approvedById String?
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  user        User @relation("RegistrationUser", fields: [userId], references: [id], onDelete: Restrict)
+  approvedBy  User? @relation("RegistrationApprover", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@index([pending, createdAt])
+}
+
+model CustomerDataAudit {
+  id          String   @id @default(cuid())
+  customerId  String
+  addressId   String?
+  actorUserId String
+  action      String
+  fields      String[]
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  address     Address? @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  actor       User @relation("CustomerDataActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, occurredAt])
+}
+
+model CustomerStatusAudit {
+  id              String   @id @default(cuid())
+  customerId      String
+  actorUserId     String
+  previousEnabled Boolean
+  nextEnabled     Boolean
+  occurredAt      DateTime @default(now()) @db.Timestamptz(3)
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actor           User @relation("CustomerStatusActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, occurredAt])
+}
+
+model CustomerCreationAudit {
+  id          String   @id @default(cuid())
+  customerId  String   @unique
+  actorUserId String
+  source      String
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actor       User @relation("CustomerCreationActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, occurredAt])
 }
 
 model Address {
@@ -76,9 +192,11 @@ model Address {
   department String
   reference  String?
   notes      String?
+  active     Boolean  @default(true)
   createdAt  DateTime @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @db.Timestamptz(3)
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  dataChanges CustomerDataAudit[]
 
   @@index([customerId])
 }

@@ -2,7 +2,7 @@ name: API CI
 
 on:
   push:
-    branches: [dev, staging, main, feat/scrum-12-13-backend-modelo, feat/scrum-14-auth0, feat/scrum-14-oidc-zitadel]
+    branches: [cesarworkbench, dev, staging, main, feat/scrum-12-13-backend-modelo, feat/scrum-14-auth0, feat/scrum-14-oidc-zitadel]
   pull_request:
     branches: [dev, staging, main, feat/scrum-12-13-backend-modelo]
   workflow_dispatch:
@@ -27,6 +27,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      postgres_integration:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ohana_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: ohana_isolated_test
+        ports:
+          - 56543:5432
+        options: >-
+          --health-cmd "pg_isready -U ohana_test -d ohana_isolated_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: test
       PORT: 3100
@@ -39,6 +52,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run prisma:validate
       - run: npm run prisma:generate
       - run: npm run prisma:migrate:deploy
@@ -47,6 +61,12 @@ jobs:
       - run: npm run db:verify
       - run: npm run build
       - run: npm test
+      - name: Integration database migrations and HTTP tests
+        env:
+          DATABASE_URL: postgresql://ohana_test@127.0.0.1:56543/ohana_isolated_test
+        run: |
+          npm run prisma:migrate:deploy
+          node --test --test-concurrency=1 test/*.test.mjs
       - name: HTTP health check against PostgreSQL
         run: |
           node dist/main.js &
