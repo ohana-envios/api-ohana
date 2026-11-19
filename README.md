@@ -76,10 +76,15 @@ Para ejecutar todo el proceso de verificación anterior con una sola orden y gua
 | `ZITADEL_WEB_CLIENT_IDS` | Client IDs públicos autorizados a llamar a la API, separados por comas. |
 | `ZITADEL_API_CLIENT_ID` | Client ID de la aplicación API con autenticación Basic. |
 | `ZITADEL_API_CLIENT_SECRET` | Secreto de esa aplicación API; solo en servidor, nunca en web ni Git. |
+| `ZITADEL_ORG_ID` | Organización ZITADEL en la que se crean las cuentas nuevas. |
+| `ZITADEL_USER_SERVICE_TOKEN` | PAT de una cuenta de servicio con permiso `user.write`; solo en el servidor. |
+| `ZITADEL_USER_INVITER_SUBJECTS` | Subjects OIDC autorizados temporalmente a invitar, separados por coma. No son roles y nunca se aceptan desde el navegador. |
 
 La configuración se valida al iniciar. El archivo `.env` y el cliente Prisma generado están excluidos de Git. `prisma.config.ts` sigue el formato de Prisma 7: la URL reside allí y la conexión de la aplicación usa `@prisma/adapter-pg`.
 
 `GET /api/auth/me` exige un access token activo de ZITADEL. La API lo introspecta y comprueba emisor, proyecto, cliente web y expiración; admite tokens JWT u opacos. La guía [docs/zitadel-setup.md](docs/zitadel-setup.md) explica la configuración de MFA y de cada ambiente. En desarrollo el health funciona sin instancia; el endpoint protegido devuelve 503 hasta configurar ZITADEL. En producción la API no arranca sin las cinco variables de ZITADEL.
+
+`GET /api/users/invitations/access` indica si el usuario autenticado está habilitado para invitar. `POST /api/users/invitations` crea una cuenta humana y solicita a ZITADEL el correo de verificación/configuración. El acceso se limita a los subjects configurados en `ZITADEL_USER_INVITER_SUBJECTS`; el PAT de servicio y la organización nunca se envían al navegador. La aplicación no asigna roles en este flujo. La obligación de configurar MFA se aplica desde la política de inicio de sesión de ZITADEL; este correo inicia la cuenta, no configura por sí mismo un segundo factor. Para acceder a las APIs de ZITADEL se necesita una cuenta de servicio con permisos administrativos adecuados, por ejemplo `ORG_USER_MANAGER`, y un PAT guardado como secreto en el entorno del servidor.
 
 ## Migraciones y CI
 

@@ -8,11 +8,13 @@ import { InvitationController } from './invitation.controller.js';
 import { InvitationService } from './invitation.service.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
+import { ZitadelProvisioningController } from './zitadel-provisioning.controller.js';
+import { ZitadelProvisioningService } from './zitadel-provisioning.service.js';
 
 @Module({
   imports: [AuthModule, PrismaModule],
-  controllers: [UsersController, InvitationController],
-  providers: [UsersService, OperationalUserGuard, RolesGuard, InvitationService, RegistrationTokenGuard],
+  controllers: [UsersController, InvitationController, ZitadelProvisioningController],
+  providers: [UsersService, OperationalUserGuard, RolesGuard, InvitationService, RegistrationTokenGuard, ZitadelProvisioningService],
   exports: [UsersService, OperationalUserGuard, RolesGuard, AuthModule],
 })
 export class UsersModule {}
