@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { AuthTokenService } from '../dist/auth/auth-token.service.js';
 import { PrismaService } from '../dist/prisma/prisma.service.js';
 import { UsersModule } from '../dist/users/users.module.js';
+import { ZitadelProvisioningService } from '../dist/users/zitadel-provisioning.service.js';
 import { OperationalUserGuard } from '../dist/users/operational-user.guard.js';
 import { RequireRoles } from '../dist/users/require-roles.decorator.js';
 import { RolesGuard } from '../dist/users/roles.guard.js';
@@ -75,12 +76,34 @@ test('operational HTTP access uses the real module and guard chain', { timeout: 
     if (token === 'auth-offline') throw new ServiceUnavailableException('Authentication unavailable');
     return { sub: token };
   };
+  const provisioning = app.get(ZitadelProvisioningService);
+  provisioning.canInvite = () => true;
+  let invitations = 0;
+  provisioning.invite = async ({ email }) => { invitations++; return { email, userId: 'identity', invitation: 'sent' }; };
   app.setGlobalPrefix('api');
   try {
     await app.listen(0, '127.0.0.1');
     const origin = await app.getUrl();
     const request = (path, subject, extraHeaders = {}) => fetch(`${origin}/api/${path}`, {
       headers: { ...(subject ? { Authorization: `Bearer ${subject}` } : {}), ...extraHeaders },
+    });
+
+    await t.test('invitations require an enabled local administrator even when the identity is allowlisted', async () => {
+      const send = (subject) => fetch(`${origin}/api/users/invitations`, { method: 'POST', headers: { Authorization: `Bearer ${subject}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'person@example.invalid', firstName: 'Ana', lastName: 'Test' }) });
+      for (const subject of ['subject-disabled', 'not-linked', 'subject-CUSTOMER', 'subject-OPERATOR']) {
+        assert.equal((await request('users/invitations/access', subject)).status, 403);
+        assert.equal((await send(subject)).status, 403);
+      }
+      assert.equal(invitations, 0);
+      assert.equal((await request('users/invitations/access', 'subject-ADMIN')).status, 200);
+      assert.equal((await send('subject-ADMIN')).status, 201);
+      assert.equal(invitations, 1);
+      provisioning.canInvite = () => false;
+      assert.deepEqual(await (await request('users/invitations/access', 'subject-ADMIN')).json(), { canInvite: false });
+      assert.equal((await send('subject-ADMIN')).status, 403);
+      assert.equal(invitations, 1);
+      provisioning.canInvite = () => true;
+      userLookups = 0;
     });
 
     await t.test('invalid or missing authentication is rejected before user lookup', async () => {
