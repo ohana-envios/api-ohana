@@ -1,0 +1,349 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  CUSTOMER
+  COURIER
+}
+
+enum CustomerType {
+  PERSON
+  COMPANY
+}
+
+enum ShipmentStatus {
+  PENDING
+  IN_ROUTE
+  DELIVERED
+  CANCELED
+}
+
+enum ShipmentPriority {
+  NORMAL
+  HIGH
+}
+
+enum ShipmentCustody {
+  SENDER
+}
+
+model User {
+  id               String          @id @default(cuid())
+  externalAuthId   String?         @unique
+  email            String          @unique
+  displayName      String
+  role             UserRole        @default(OPERATOR)
+  enabled          Boolean         @default(true)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
+  createdShipments Shipment[]      @relation("ShipmentCreator")
+  shipmentEvents   ShipmentEvent[] @relation("EventActor")
+  customerRegistration CustomerRegistration? @relation("RegistrationUser")
+  approvedRegistrations CustomerRegistration[] @relation("RegistrationApprover")
+  customerDataChanges CustomerDataAudit[] @relation("CustomerDataActor")
+  customerStatusChanges CustomerStatusAudit[] @relation("CustomerStatusActor")
+  customerCreations CustomerCreationAudit[] @relation("CustomerCreationActor")
+  invitationsReceived UserInvitation[] @relation("InvitationTarget")
+  invitationsIssued UserInvitation[] @relation("InvitationIssuer")
+  userCreationsMade UserCreationAudit[] @relation("UserCreationActor")
+  creationAudit UserCreationAudit? @relation("UserCreationTarget")
+  accessChangesMade UserAccessAudit[] @relation("AccessChangeActor")
+  accessChangesReceived UserAccessAudit[] @relation("AccessChangeTarget")
+  courierChanges CourierAudit[] @relation("CourierAuditActor")
+  courierProfile Courier? @relation("CourierUser")
+  receiptsUploaded ShipmentReceipt[] @relation("ReceiptUploader")
+  receiptsReplaced ShipmentReceiptHistory[] @relation("ReceiptReplacer")
+
+  @@index([role, enabled])
+}
+
+model Courier {
+  id           String   @id @default(cuid())
+  userId       String?  @unique
+  user         User?    @relation("CourierUser", fields: [userId], references: [id], onDelete: Restrict)
+  displayName  String
+  active       Boolean  @default(true)
+  available    Boolean  @default(true)
+  vehicle      String?
+  capacity     String?
+  workingHours String?
+  notes        String?
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  changes      CourierAudit[]
+  shipments    Shipment[]
+
+  @@index([displayName, id])
+}
+
+model CourierAudit {
+  id          String   @id @default(cuid())
+  courierId   String
+  actorUserId String
+  action      String
+  fields      String[]
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  courier     Courier  @relation(fields: [courierId], references: [id], onDelete: Restrict)
+  actor       User     @relation("CourierAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([courierId, occurredAt])
+}
+
+model UserInvitation {
+  id           String   @id @default(cuid())
+  targetUserId String
+  issuedById   String
+  tokenHash    String   @unique
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime @db.Timestamptz(3)
+  usedAt       DateTime? @db.Timestamptz(3)
+  claimedSubject String?
+  revokedAt    DateTime? @db.Timestamptz(3)
+  target       User @relation("InvitationTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  issuer       User @relation("InvitationIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+
+  @@index([targetUserId, createdAt])
+}
+
+model UserCreationAudit {
+  id           String   @id @default(cuid())
+  actorUserId  String
+  targetUserId String   @unique
+  role         UserRole
+  occurredAt   DateTime @default(now()) @db.Timestamptz(3)
+  actor        User @relation("UserCreationActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  target       User @relation("UserCreationTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, occurredAt])
+}
+
+model UserAccessAudit {
+  id              String   @id @default(cuid())
+  actorUserId     String
+  targetUserId    String
+  previousRole    UserRole
+  previousEnabled Boolean
+  nextRole        UserRole
+  nextEnabled     Boolean
+  occurredAt      DateTime @default(now()) @db.Timestamptz(3)
+  actor           User     @relation("AccessChangeActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  target          User     @relation("AccessChangeTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+
+  @@index([targetUserId, occurredAt])
+  @@index([actorUserId, occurredAt])
+}
+
+model Customer {
+  id             String       @id @default(cuid())
+  type           CustomerType
+  displayName    String
+  legalName      String?
+  documentType   String?
+  documentNumber String?
+  email          String?
+  phone          String?
+  enabled        Boolean      @default(true)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
+  addresses      Address[]
+  shipments      Shipment[]
+  registration   CustomerRegistration?
+  creationAudit  CustomerCreationAudit?
+  statusChanges  CustomerStatusAudit[]
+  dataChanges    CustomerDataAudit[]
+
+  @@index([documentType, documentNumber])
+  @@index([enabled, displayName])
+}
+
+// A self-registration is separate from both the customer and its access account.
+model CustomerRegistration {
+  id          String   @id @default(cuid())
+  customerId  String   @unique
+  userId      String   @unique
+  emailKey    String   @unique
+  pending     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  approvedAt  DateTime? @db.Timestamptz(3)
+  approvedById String?
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  user        User @relation("RegistrationUser", fields: [userId], references: [id], onDelete: Restrict)
+  approvedBy  User? @relation("RegistrationApprover", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@index([pending, createdAt])
+}
+
+model CustomerDataAudit {
+  id          String   @id @default(cuid())
+  customerId  String
+  addressId   String?
+  actorUserId String
+  action      String
+  fields      String[]
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  address     Address? @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  actor       User @relation("CustomerDataActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, occurredAt])
+}
+
+model CustomerStatusAudit {
+  id              String   @id @default(cuid())
+  customerId      String
+  actorUserId     String
+  previousEnabled Boolean
+  nextEnabled     Boolean
+  occurredAt      DateTime @default(now()) @db.Timestamptz(3)
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actor           User @relation("CustomerStatusActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([customerId, occurredAt])
+}
+
+model CustomerCreationAudit {
+  id          String   @id @default(cuid())
+  customerId  String   @unique
+  actorUserId String
+  source      String
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actor       User @relation("CustomerCreationActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, occurredAt])
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String?
+  street     String
+  number     String
+  locality   String
+  department String
+  reference  String?
+  notes      String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  dataChanges CustomerDataAudit[]
+
+  @@index([customerId])
+}
+
+model Shipment {
+  id                    String           @id @default(cuid())
+  code                  String           @unique
+  customerId            String
+  createdByUserId       String?
+  senderName            String
+  senderPhone           String?
+  recipientName         String
+  recipientPhone        String?
+  pickupStreet          String
+  pickupNumber          String
+  pickupLocality        String
+  pickupDepartment      String
+  pickupReference       String?
+  deliveryStreet        String
+  deliveryNumber        String
+  deliveryLocality      String
+  deliveryDepartment    String
+  deliveryReference     String?
+  requestedPickupAt     DateTime?        @db.Timestamptz(3)
+  requestedDeliveryAt   DateTime?        @db.Timestamptz(3)
+  custody               ShipmentCustody?
+  assignedCourierId     String?
+  assignedCourier       Courier?         @relation(fields: [assignedCourierId], references: [id], onDelete: Restrict)
+  pickedUpAt            DateTime?        @db.Timestamptz(3)
+  deliveredAt           DateTime?        @db.Timestamptz(3)
+  status                ShipmentStatus   @default(PENDING)
+  priority              ShipmentPriority @default(NORMAL)
+  notes                 String?
+  createdAt             DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime         @updatedAt @db.Timestamptz(3)
+  customer              Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy             User?            @relation("ShipmentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  packages              Package[]
+  events                ShipmentEvent[]
+  receipt               ShipmentReceipt?
+  receiptHistory        ShipmentReceiptHistory[]
+
+  @@index([customerId, createdAt])
+  @@index([status, priority, createdAt])
+  @@index([createdByUserId])
+  @@index([assignedCourierId, status])
+}
+
+model ShipmentReceiptHistory {
+  id            String   @id @default(cuid())
+  shipmentId    String
+  replacedById  String
+  oldUploaderId String
+  oldMediaType  String
+  oldSize       Int
+  oldData       Bytes
+  oldCreatedAt  DateTime @db.Timestamptz(3)
+  replacedAt    DateTime @default(now()) @db.Timestamptz(3)
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  replacedBy    User @relation("ReceiptReplacer", fields: [replacedById], references: [id], onDelete: Restrict)
+
+  @@index([shipmentId, replacedAt])
+}
+
+model ShipmentReceipt {
+  id          String   @id @default(cuid())
+  shipmentId  String   @unique
+  uploadedById String
+  mediaType   String
+  size        Int
+  version     Int      @default(1)
+  data        Bytes
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  uploadedBy  User @relation("ReceiptUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+}
+
+model Package {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  sequence    Int
+  description String?
+  weightKg    Decimal? @db.Decimal(10, 3)
+  lengthCm    Decimal? @db.Decimal(10, 2)
+  widthCm     Decimal? @db.Decimal(10, 2)
+  heightCm    Decimal? @db.Decimal(10, 2)
+  notes       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+
+  @@unique([shipmentId, sequence])
+}
+
+model ShipmentEvent {
+  id                String          @id @default(cuid())
+  shipmentId        String
+  actorUserId       String?
+  actorLabel        String
+  type              String
+  previousStatus    ShipmentStatus?
+  newStatus         ShipmentStatus?
+  notes             String?
+  occurredAt        DateTime        @default(now()) @db.Timestamptz(3)
+  shipment          Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  actor             User?           @relation("EventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([shipmentId, occurredAt])
+  @@index([actorUserId])
+}
