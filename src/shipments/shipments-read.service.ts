@@ -37,7 +37,8 @@ export class ShipmentsReadService {
     return this.project(actor, item);
   }
   async getByCode(actor: OperationalUser, code: string) {
-    const item = await this.prisma.shipment.findFirst({ where: { AND: [{ code: { equals: code, mode: 'insensitive' } }, scope(actor)] }, select: details });
+    const legacyKey = /^OH-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(code)?.[1]?.toUpperCase();
+    const item = await this.prisma.shipment.findFirst({ where: { AND: [{ OR: [{ code: { equals: code, mode: 'insensitive' } }, ...(legacyKey ? [{ requestKey: legacyKey }] : [])] }, scope(actor)] }, select: details });
     return this.project(actor, item);
   }
   private project(actor: OperationalUser, item: Prisma.ShipmentGetPayload<{ select: typeof details }> | null) {
@@ -52,10 +53,10 @@ export class ShipmentsReadService {
     if (!item?.receipt) throw new NotFoundException('Comprobante no encontrado');
     return item.receipt;
   }
-  async history(actor: OperationalUser, id: string, page: number) {
+  async history(actor: OperationalUser, id: string, page: number, type?: string) {
     const visible = await this.prisma.shipment.findFirst({ where: { AND: [{ id }, scope(actor)] }, select: { id: true } });
     if (!visible) throw new NotFoundException('Envío no encontrado');
-    const where: Prisma.ShipmentEventWhereInput = { shipmentId: id, shipment: { is: scope(actor) }, ...(actor.role === 'CUSTOMER' ? { type: { in: ['CREATED', 'RECEIPT_ADDED', 'RECEIPT_REPLACED'] } } : {}) };
+    const where: Prisma.ShipmentEventWhereInput = { shipmentId: id, shipment: { is: scope(actor) }, AND: [...(actor.role === 'CUSTOMER' ? [{ type: { in: ['CREATED', 'STATUS_CHANGED', 'RECEIPT_ADDED', 'RECEIPT_REPLACED'] } }] : []), ...(type ? [{ type }] : [])] };
     const select = { type: true, occurredAt: true, actorLabel: true, notes: true, previousStatus: true, newStatus: true } as const;
     const [events, total] = await Promise.all([this.prisma.shipmentEvent.findMany({ where, select, orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * 30, take: 30 }), this.prisma.shipmentEvent.count({ where })]);
     return { items: actor.role === 'ADMIN' ? events : events.map(({ type, occurredAt, newStatus }) => ({ type, occurredAt, newStatus })), page, totalPages: Math.ceil(total / 30) };

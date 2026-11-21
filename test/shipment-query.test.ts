@@ -10,3 +10,9 @@ test('accepts combined filters and bounded pagination', () => {
 test('rejects invalid or unknown filters and inverted date intervals', () => {
   for (const query of [{ page: '0' }, { status: 'LOST' }, { priority: 'urgent' }, { from: 'today' }, { unknown: 'x' }, { from: '2026-11-22T00:00:00Z', to: '2026-11-21T00:00:00Z' }]) assert.throws(() => parseShipmentQuery(query));
 });
+
+test('allows filtering by every documented operational state', () => {
+  for (const status of ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_DEPOT', 'IN_ROUTE', 'DELIVERED', 'NOT_DELIVERED', 'RESCHEDULED', 'CANCELED']) {
+    assert.equal(parseShipmentQuery({ status }).status, status);
+  }
+});

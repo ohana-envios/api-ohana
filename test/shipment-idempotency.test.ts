@@ -16,8 +16,9 @@ test('a retry returns the original shipment without repeating side effects and c
     address: { create: async () => { addressCreates++; return { id: 'address' }; } },
     customerDataAudit: { create: async () => ({}) },
     shipment: {
-      findUnique: async () => record,
-      create: async ({ data }: { data: Record<string, unknown> }) => { shipmentCreates++; record = { id: 'shipment', code: data.code, status: 'PENDING', createdAt: new Date(), createdByUserId: data.createdByUserId, customerId: data.customerId }; return { id: record.id, code: record.code, status: record.status, createdAt: record.createdAt }; },
+      findUnique: async ({ where }: { where: { code: string } }) => record?.code === where.code ? record : null,
+      findFirst: async ({ where }: { where: { OR: Array<{ requestKey?: string; code?: string }> } }) => { if (!record || !where.OR.some((item) => (item.requestKey && item.requestKey === record?.requestKey) || (item.code && item.code === record?.code))) return null; const { requestKey: _key, ...result } = record; return result; },
+      create: async ({ data }: { data: Record<string, unknown> }) => { shipmentCreates++; record = { id: 'shipment', code: data.code, requestKey: data.requestKey, status: 'PENDING', createdAt: new Date(), createdByUserId: data.createdByUserId, customerId: data.customerId }; return { id: record.id, code: record.code, status: record.status, createdAt: record.createdAt }; },
     },
   };
   const prisma = { $transaction: async (fn: (arg: typeof tx) => unknown) => fn(tx) } as unknown as PrismaService;
