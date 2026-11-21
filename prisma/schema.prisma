@@ -32,6 +32,10 @@ enum ShipmentPriority {
   HIGH
 }
 
+enum ShipmentCustody {
+  SENDER
+}
+
 model User {
   id               String          @id @default(cuid())
   externalAuthId   String?         @unique
@@ -54,8 +58,45 @@ model User {
   creationAudit UserCreationAudit? @relation("UserCreationTarget")
   accessChangesMade UserAccessAudit[] @relation("AccessChangeActor")
   accessChangesReceived UserAccessAudit[] @relation("AccessChangeTarget")
+  courierChanges CourierAudit[] @relation("CourierAuditActor")
+  courierProfile Courier? @relation("CourierUser")
+  receiptsUploaded ShipmentReceipt[] @relation("ReceiptUploader")
+  receiptsReplaced ShipmentReceiptHistory[] @relation("ReceiptReplacer")
 
   @@index([role, enabled])
+}
+
+model Courier {
+  id           String   @id @default(cuid())
+  userId       String?  @unique
+  user         User?    @relation("CourierUser", fields: [userId], references: [id], onDelete: Restrict)
+  displayName  String
+  active       Boolean  @default(true)
+  available    Boolean  @default(true)
+  vehicle      String?
+  capacity     String?
+  workingHours String?
+  notes        String?
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  changes      CourierAudit[]
+  shipments    Shipment[]
+
+  @@index([displayName, id])
+}
+
+model CourierAudit {
+  id          String   @id @default(cuid())
+  courierId   String
+  actorUserId String
+  action      String
+  fields      String[]
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  courier     Courier  @relation(fields: [courierId], references: [id], onDelete: Restrict)
+  actor       User     @relation("CourierAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([courierId, occurredAt])
 }
 
 model UserInvitation {
@@ -221,6 +262,10 @@ model Shipment {
   deliveryDepartment    String
   deliveryReference     String?
   requestedPickupAt     DateTime?        @db.Timestamptz(3)
+  requestedDeliveryAt   DateTime?        @db.Timestamptz(3)
+  custody               ShipmentCustody?
+  assignedCourierId     String?
+  assignedCourier       Courier?         @relation(fields: [assignedCourierId], references: [id], onDelete: Restrict)
   pickedUpAt            DateTime?        @db.Timestamptz(3)
   deliveredAt           DateTime?        @db.Timestamptz(3)
   status                ShipmentStatus   @default(PENDING)
@@ -232,10 +277,42 @@ model Shipment {
   createdBy             User?            @relation("ShipmentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
   packages              Package[]
   events                ShipmentEvent[]
+  receipt               ShipmentReceipt?
+  receiptHistory        ShipmentReceiptHistory[]
 
   @@index([customerId, createdAt])
   @@index([status, priority, createdAt])
   @@index([createdByUserId])
+  @@index([assignedCourierId, status])
+}
+
+model ShipmentReceiptHistory {
+  id            String   @id @default(cuid())
+  shipmentId    String
+  replacedById  String
+  oldUploaderId String
+  oldMediaType  String
+  oldSize       Int
+  oldData       Bytes
+  oldCreatedAt  DateTime @db.Timestamptz(3)
+  replacedAt    DateTime @default(now()) @db.Timestamptz(3)
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  replacedBy    User @relation("ReceiptReplacer", fields: [replacedById], references: [id], onDelete: Restrict)
+
+  @@index([shipmentId, replacedAt])
+}
+
+model ShipmentReceipt {
+  id          String   @id @default(cuid())
+  shipmentId  String   @unique
+  uploadedById String
+  mediaType   String
+  size        Int
+  version     Int      @default(1)
+  data        Bytes
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  uploadedBy  User @relation("ReceiptUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
 }
 
 model Package {
