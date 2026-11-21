@@ -62,6 +62,8 @@ En Vercel, vincular `web-ohana` y usar `main` como Production Branch solo despu�
 
 En móvil, `EXPO_PUBLIC_API_BASE_URL` apunta a una URL accesible desde el dispositivo. Las variables `EXPO_PUBLIC_` se incluyen en el bundle y no admiten secretos. Antes de distribuir builds, definir perfiles de desarrollo, staging y producción en EAS con identificadores de aplicación distintos y credenciales de tienda del equipo.
 
+Para autorizar la aplicación móvil en cada ambiente, configurar `ZITADEL_MOBILE_CLIENT_IDS` en el archivo privado del VPS con el Client ID nativo de ese ambiente (varios, separados por comas). Compose lo pasa a la API; si queda vacío, la API no admite tokens de clientes móviles. El identificador público de la app debe coincidir con `EXPO_PUBLIC_ZITADEL_MOBILE_CLIENT_ID`. Después de cambiar el archivo hay que recrear el contenedor de la API y probar con una sesión real; no agregar secretos al bundle móvil.
+
 ## GitHub Actions y promoción
 
 Los workflows verifican cada PR: la API levanta PostgreSQL efímero, aplica migraciones y prueba HTTP; la web compila; móvil exporta bundles iOS/Android. El job de CD de API para staging entra tras CI verde al recibir un push a `staging`, una vez configurados acceso y variables. La promoción propuesta es `PR → CI verde → revisión → staging → pruebas de aceptación → backup → producción`. Los GitHub Environments `staging` y `production` ya existen; configurar revisores requeridos para producción y secretos separados. No hay despliegue automático a producción.

@@ -84,6 +84,8 @@ jobs:
           docker compose -f infra/compose.dev.yml config --quiet
           docker compose --env-file infra/staging.env.example -p ohana-staging -f infra/compose.deploy.yml config --quiet
           docker compose --env-file infra/production.env.example -p ohana-production -f infra/compose.deploy.yml config --quiet
+          ZITADEL_MOBILE_CLIENT_IDS=ci-mobile-client docker compose --env-file infra/staging.env.example -p ohana-staging -f infra/compose.deploy.yml config --format json | node scripts/check-compose-mobile.mjs
+          ZITADEL_MOBILE_CLIENT_IDS=ci-mobile-client docker compose --env-file infra/production.env.example -p ohana-production -f infra/compose.deploy.yml config --format json | node scripts/check-compose-mobile.mjs
       - name: Build deployment image
         run: docker build -t ohana-api:ci .
 
