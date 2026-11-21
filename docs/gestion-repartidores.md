@@ -1,0 +1,12 @@
+# Gestión de repartidores (RF-19)
+
+La ficha operativa es independiente de las cuentas de acceso: crearla no crea ni habilita un usuario. Un administrador habilitado puede listar, buscar, crear y editar fichas mediante `/api/couriers`. Las listas están paginadas; los cambios exigen la versión cargada y se registran en `CourierAudit` dentro de la misma transacción. La consulta `possible-duplicate` advierte coincidencias de nombre sin impedir que existan personas distintas con el mismo nombre. Esta advertencia es orientativa y no garantiza detectar todas las duplicaciones.
+
+La ficha conserva la disponibilidad declarada aun si está inactiva. Una asignación exige que ambos campos, `active` y `available`, sean verdaderos. El sistema cuenta envíos pendientes o en ruta como tareas activas y exige una confirmación que incluya el número observado antes de desactivar o marcar no disponible; si cambia el número, obliga a volver a revisar. La asignación básica no implementa todavía la planificación completa ni el portal de tareas del repartidor.
+
+La migración `202611210001_courier_profiles` se ha probado en PostgreSQL aislado; no se ha aplicado a staging ni a producción. Coordinar su despliegue con el responsable de infraestructura. La validación integrada con ZITADEL, la revisión visual en web y la ejecución en dispositivos móviles siguen pendientes.
+## Acceso de repartidores y operadores a envíos
+
+Por decisión del equipo, el operador habilitado puede consultar todos los envíos. El repartidor habilitado puede consultar únicamente los asignados a su propia ficha activa, incluso al buscar por código. El filtrado se aplica en la API; una cuenta sin ficha vinculada no ve envíos. Los comprobantes y la modificación de asignaciones no se habilitan con este permiso de consulta.
+
+Un administrador vincula o desvincula una cuenta con rol de repartidor desde la ficha, tanto en web como en móvil. Una cuenta no puede vincularse a dos fichas. Los vínculos no se infieren por nombre; las fichas existentes quedan sin vincular hasta que el administrador lo haga. El cambio se registra en la auditoría. La migración `202611210004_courier_user_link` agrega la columna opcional y su restricción única sin modificar las fichas anteriores. Al desplegarla, aplicar las migraciones antes de instalar los clientes; para volver atrás, retirar primero el código que usa el vínculo y, luego de respaldar y evaluar los vínculos existentes, eliminar la restricción y la columna mediante una migración de reversión controlada.

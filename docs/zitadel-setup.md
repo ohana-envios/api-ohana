@@ -1,5 +1,11 @@
 # ZITADEL Cloud Free — OIDC y MFA de Ohana
 
+## Recuperación de contraseña
+
+Web y móvil ofrecen una entrada que inicia el mismo acceso OIDC alojado en ZITADEL e indica al usuario que ingrese su correo y elija recuperar contraseña. No se recopilan ni procesan contraseñas en Ohana. La documentación de ZITADEL describe el restablecimiento desde su página alojada y la opción de política que permite ocultarlo: https://zitadel.com/docs/guides/integrate/login/hosted-login y https://zitadel.com/docs/guides/manage/console/default-settings.
+
+La presencia de esta entrada no acredita que la recuperación esté habilitada en el tenant ni que el correo llegue. Antes de declarar CU31 validado, comprobar la política de acceso, el correo verificado, la entrega del mensaje, el restablecimiento y el regreso a web y móvil con cuentas de prueba, sin alterar roles ni habilitaciones. La pantalla o terminología concreta puede variar según la versión del login alojado.
+
 ## Lectura administrativa móvil preparada
 
 La API acepta, además de la lista web existente, identificadores opcionales en `ZITADEL_MOBILE_CLIENT_IDS`, separados por comas. Cada token continúa pasando por introspección y las mismas comprobaciones de emisor, audiencia, cliente, vencimiento, usuario habilitado y rol. Una lista vacía no autoriza ningún cliente móvil nuevo. El alta de la aplicación nativa y la configuración del tenant corresponden al equipo responsable; no se modificaron servicios remotos. Registrar como URI de retorno la URI exacta generada para el build nativo (`ohanaenvios://auth/callback` en la configuración prevista) y verificarla en dispositivo.
