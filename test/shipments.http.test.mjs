@@ -252,6 +252,9 @@ test('HTTP shipment registration validates data and checks real role and ownersh
     assert.equal((await planPost('http-admin', plans)).status, 201);
     const planned = await prisma.shipment.findUniqueOrThrow({ where: { id: other.id } });
     assert.equal(planned.status, 'ASSIGNED'); assert.equal(planned.assignedCourierId, secondCourier.id); assert.equal(planned.plannedFor.toISOString().slice(0, 10), '2026-11-24'); assert.equal(planned.custody, 'SENDER');
+    const day = await (await fetch(`${planUrl}?date=2026-11-24&search=nombre-que-no-coincide`, { headers: { Authorization: 'Bearer http-admin' } })).json();
+    assert.equal(day.items.find((item) => item.id === other.id).assignedCourier.displayName, secondCourier.displayName);
+    assert.equal(day.couriers.length, 0);
     assert.equal((await planPost('http-admin', plans)).status, 409);
     assert.equal(await prisma.shipmentEvent.count({ where: { shipmentId: other.id, type: 'PLAN_CHANGED' } }), 1);
     const tasks = await (await get('http-courier2', '/tasks/mine?date=2026-11-24')).json();
@@ -274,5 +277,48 @@ test('HTTP shipment registration validates data and checks real role and ownersh
     const planRace = await Promise.all([concurrentPlan(secondCourier.id), concurrentPlan(thirdCourier.id)]);
     assert.deepEqual(planRace.map((response) => response.status).sort(), [201, 409]);
     assert.equal(await prisma.shipmentEvent.count({ where: { shipmentId: raceShipment.id, type: 'PLAN_CHANGED' } }), 1);
+    const pickupShipment = await (await post('http-admin', { ...input, customerId: 'http-two', recipientName: 'Prueba retiro', pickup: { kind: 'new', address, save: false } })).json();
+    assert.equal((await patch('http-admin', `shipments/${pickupShipment.id}/assignment`, { courierId: secondCourier.id, expectedCourierId: null })).status, 200);
+    const pickup = (token, body = {}) => fetch(`${origin}/api/shipments/${pickupShipment.id}/pickup`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal((await pickup('http-admin')).status, 403);
+    assert.equal((await pickup('http-client')).status, 403);
+    assert.equal((await pickup('http-courier')).status, 404);
+    assert.equal((await pickup('http-courier2', { observation: 'x'.repeat(1001) })).status, 400);
+    const pickupRace = await Promise.all([pickup('http-courier2', { observation: 'Recibido' }), pickup('http-courier2', { observation: 'Recibido' })]);
+    assert.deepEqual(pickupRace.map((r) => r.status).sort(), [201, 409]);
+    const pickedUp = await prisma.shipment.findUniqueOrThrow({ where: { id: pickupShipment.id } });
+    assert.equal(pickedUp.status, 'PICKED_UP'); assert.equal(pickedUp.custody, 'COURIER'); assert.equal(pickedUp.custodyCourierId, secondCourier.id); assert.ok(pickedUp.pickedUpAt); assert.equal(pickedUp.custodyVersion, 1);
+    const pickupEvents = await prisma.shipmentEvent.findMany({ where: { shipmentId: pickupShipment.id, type: { in: ['STATUS_CHANGED', 'CUSTODY_CHANGED'] } } });
+    assert.equal(pickupEvents.filter((event) => event.type === 'STATUS_CHANGED' && event.newStatus === 'PICKED_UP').length, 1);
+    assert.equal(pickupEvents.filter((event) => event.type === 'CUSTODY_CHANGED' && event.actorUserId === 'http-courier2' && event.notes.includes('Recibido')).length, 1);
+    assert.equal((await patch('http-courier2', `shipments/${pickupShipment.id}/custody`, { expectedVersion: 1, kind: 'DEPOT', location: 'Deposito' })).status, 200);
+    const withEvidence = await (await post('http-admin', { ...input, customerId: 'http-two', pickup: { kind: 'new', address, save: false } })).json();
+    assert.equal((await patch('http-admin', `shipments/${withEvidence.id}/assignment`, { courierId: secondCourier.id, expectedCourierId: null })).status, 200);
+    const invalidPickup = new FormData(); invalidPickup.append('payload', '{}'); invalidPickup.append('evidence', new Blob(['invalid'], { type: 'application/pdf' }), 'bad.pdf');
+    assert.equal((await fetch(`${origin}/api/shipments/${withEvidence.id}/pickup`, { method: 'POST', headers: { Authorization: 'Bearer http-courier2' }, body: invalidPickup })).status, 400);
+    assert.equal((await prisma.shipment.findUniqueOrThrow({ where: { id: withEvidence.id } })).status, 'ASSIGNED');
+    const pickupEvidence = new FormData(); pickupEvidence.append('payload', JSON.stringify({ observation: 'Foto del retiro' })); pickupEvidence.append('evidence', new Blob(['%PDF-1.7 pickup'], { type: 'application/pdf' }), 'retiro.pdf');
+    assert.equal((await fetch(`${origin}/api/shipments/${withEvidence.id}/pickup`, { method: 'POST', headers: { Authorization: 'Bearer http-courier2' }, body: pickupEvidence })).status, 201);
+    const pickupEvent = await prisma.shipmentEvent.findFirstOrThrow({ where: { shipmentId: withEvidence.id, type: 'CUSTODY_CHANGED' }, include: { evidence: true } });
+    assert.ok(pickupEvent.evidence); assert.equal((await get('http-courier2', `/${withEvidence.id}/custody/evidence/${pickupEvent.id}`)).status, 200);
+    // Competing operations must never cancel a physically picked-up shipment.
+    const cancelRaceShipment = await (await post('http-admin', { ...input, customerId: 'http-two', pickup: { kind: 'new', address, save: false } })).json();
+    assert.equal((await patch('http-admin', `shipments/${cancelRaceShipment.id}/assignment`, { courierId: secondCourier.id, expectedCourierId: null })).status, 200);
+    const postPickup = (id) => fetch(`${origin}/api/shipments/${id}/pickup`, { method: 'POST', headers: { Authorization: 'Bearer http-courier2', 'Content-Type': 'application/json' }, body: '{}' });
+    const [pickupResult, cancelResult] = await Promise.all([postPickup(cancelRaceShipment.id), patch('http-admin', `shipments/${cancelRaceShipment.id}/cancel`, { expectedStatus: 'ASSIGNED', reason: 'Solicitud del cliente' })]);
+    assert.ok((pickupResult.status === 201 && cancelResult.status === 409) || (pickupResult.status === 409 && cancelResult.status === 200));
+    const cancelledOrPickedUp = await prisma.shipment.findUniqueOrThrow({ where: { id: cancelRaceShipment.id } });
+    if (pickupResult.status === 201) { assert.equal(cancelledOrPickedUp.status, 'PICKED_UP'); assert.equal(cancelledOrPickedUp.custodyCourierId, secondCourier.id); assert.ok(cancelledOrPickedUp.pickedUpAt); }
+    else { assert.equal(cancelledOrPickedUp.status, 'CANCELED'); assert.equal(cancelledOrPickedUp.custody, 'SENDER'); assert.equal(cancelledOrPickedUp.pickedUpAt, null); }
+    assert.equal(await prisma.shipmentEvent.count({ where: { shipmentId: cancelRaceShipment.id, type: 'CUSTODY_CHANGED' } }), pickupResult.status === 201 ? 1 : 0);
+    // Reassignment and physical custody are separate even if they happen together.
+    const reassignRaceShipment = await (await post('http-admin', { ...input, customerId: 'http-two', pickup: { kind: 'new', address, save: false } })).json();
+    assert.equal((await patch('http-admin', `shipments/${reassignRaceShipment.id}/assignment`, { courierId: secondCourier.id, expectedCourierId: null })).status, 200);
+    const [pickupDuringAssignment, reassignment] = await Promise.all([postPickup(reassignRaceShipment.id), patch('http-admin', `shipments/${reassignRaceShipment.id}/assignment`, { courierId: thirdCourier.id, expectedCourierId: secondCourier.id })]);
+    assert.equal(reassignment.status, 200); assert.ok([201, 404].includes(pickupDuringAssignment.status));
+    const afterReassignment = await prisma.shipment.findUniqueOrThrow({ where: { id: reassignRaceShipment.id } });
+    assert.equal(afterReassignment.assignedCourierId, thirdCourier.id);
+    if (pickupDuringAssignment.status === 201) { assert.equal(afterReassignment.status, 'PICKED_UP'); assert.equal(afterReassignment.custodyCourierId, secondCourier.id); }
+    else { assert.equal(afterReassignment.status, 'ASSIGNED'); assert.equal(afterReassignment.custody, 'SENDER'); assert.equal(afterReassignment.pickedUpAt, null); }
   } finally { await app.close(); }
 });

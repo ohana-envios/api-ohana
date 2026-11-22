@@ -106,6 +106,19 @@ export class ShipmentsController {
     return this.statuses.cancel(request.currentUser!.id, id, input.expectedStatus as string, input.reason);
   }
 
+  @Post(':id/pickup')
+  @RequireRoles('COURIER')
+  @Header('Cache-Control', 'no-store')
+  @UseInterceptors(FileInterceptor('evidence', { limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1, fieldSize: 4096 } }))
+  pickup(@Req() request: OperationalUserRequest, @Param('id') id: string, @Body() body: unknown, @UploadedFile() file?: ReceiptFile) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Retiro inválido');
+    let input = body as Record<string, unknown>;
+    if ('payload' in input) { if (Object.keys(input).length !== 1 || typeof input.payload !== 'string') throw new BadRequestException('Retiro inválido'); try { input = JSON.parse(input.payload); } catch { throw new BadRequestException('Retiro inválido'); } }
+    else if (file) throw new BadRequestException('Retiro inválido');
+    if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some((key) => key !== 'observation') || (input.observation !== undefined && (typeof input.observation !== 'string' || input.observation.length > 1000))) throw new BadRequestException('Retiro inválido');
+    return this.statuses.pickup(request.currentUser!.id, id, input.observation as string | undefined, parseReceipt(file));
+  }
+
   @Patch(':id/status')
   @RequireRoles('ADMIN', 'COURIER')
   @Header('Cache-Control', 'no-store')

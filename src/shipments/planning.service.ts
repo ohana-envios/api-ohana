@@ -22,7 +22,7 @@ export class PlanningService {
     if (!actor?.enabled || actor.role !== 'ADMIN') throw new ForbiddenException('Operation not permitted');
     const where = { status: { in: [...eligible] }, OR: [{ plannedFor: null }, { plannedFor: date }] };
     const [items, total, couriers] = await Promise.all([
-      this.prisma.shipment.findMany({ where, select: { id: true, code: true, recipientName: true, status: true, plannedFor: true, assignedCourierId: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * 20, take: 20 }),
+      this.prisma.shipment.findMany({ where, select: { id: true, code: true, recipientName: true, status: true, plannedFor: true, assignedCourierId: true, assignedCourier: { select: { displayName: true } } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * 20, take: 20 }),
       this.prisma.shipment.count({ where }),
       this.prisma.courier.findMany({ where: { active: true, available: true, displayName: { contains: search, mode: 'insensitive' } }, select: { id: true, displayName: true }, orderBy: [{ displayName: 'asc' }, { id: 'asc' }], take: 101 }),
     ]);
