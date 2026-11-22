@@ -22,8 +22,13 @@ enum CustomerType {
 
 enum ShipmentStatus {
   PENDING
+  ASSIGNED
+  PICKED_UP
+  IN_DEPOT
   IN_ROUTE
   DELIVERED
+  NOT_DELIVERED
+  RESCHEDULED
   CANCELED
 }
 
@@ -34,6 +39,8 @@ enum ShipmentPriority {
 
 enum ShipmentCustody {
   SENDER
+  COURIER
+  DEPOT
 }
 
 model User {
@@ -72,6 +79,7 @@ model Courier {
   user         User?    @relation("CourierUser", fields: [userId], references: [id], onDelete: Restrict)
   displayName  String
   active       Boolean  @default(true)
+  custodyShipments Shipment[] @relation("CustodyCourier")
   available    Boolean  @default(true)
   vehicle      String?
   capacity     String?
@@ -245,6 +253,7 @@ model Address {
 model Shipment {
   id                    String           @id @default(cuid())
   code                  String           @unique
+  requestKey            String?          @unique
   customerId            String
   createdByUserId       String?
   senderName            String
@@ -263,7 +272,12 @@ model Shipment {
   deliveryReference     String?
   requestedPickupAt     DateTime?        @db.Timestamptz(3)
   requestedDeliveryAt   DateTime?        @db.Timestamptz(3)
+  plannedFor            DateTime?        @db.Date
   custody               ShipmentCustody?
+  custodyCourierId      String?
+  custodyCourier        Courier?         @relation("CustodyCourier", fields: [custodyCourierId], references: [id], onDelete: Restrict)
+  custodyLocation        String?
+  custodyVersion         Int              @default(0)
   assignedCourierId     String?
   assignedCourier       Courier?         @relation(fields: [assignedCourierId], references: [id], onDelete: Restrict)
   pickedUpAt            DateTime?        @db.Timestamptz(3)
@@ -284,6 +298,7 @@ model Shipment {
   @@index([status, priority, createdAt])
   @@index([createdByUserId])
   @@index([assignedCourierId, status])
+  @@index([plannedFor])
 }
 
 model ShipmentReceiptHistory {
@@ -343,7 +358,18 @@ model ShipmentEvent {
   occurredAt        DateTime        @default(now()) @db.Timestamptz(3)
   shipment          Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
   actor             User?           @relation("EventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  evidence          CustodyEvidence?
 
   @@index([shipmentId, occurredAt])
   @@index([actorUserId])
+}
+
+model CustodyEvidence {
+  id         String        @id @default(cuid())
+  eventId    String        @unique
+  mediaType  String
+  size       Int
+  data       Bytes
+  createdAt  DateTime      @default(now()) @db.Timestamptz(3)
+  event      ShipmentEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
 }

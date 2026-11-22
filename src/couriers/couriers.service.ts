@@ -11,7 +11,7 @@ export class CouriersService {
   async list(search: string, page: number) {
     const where = { displayName: { contains: search, mode: 'insensitive' as const } };
     const [items, total] = await Promise.all([
-      this.prisma.courier.findMany({ where, select: { ...fields, userId: true, user: { select: { id: true, email: true, displayName: true, role: true, enabled: true } }, _count: { select: { shipments: { where: { status: { in: ['PENDING', 'IN_ROUTE'] } } } } } }, orderBy: [{ displayName: 'asc' }, { id: 'asc' }], skip: (page - 1) * 20, take: 20 }),
+      this.prisma.courier.findMany({ where, select: { ...fields, userId: true, user: { select: { id: true, email: true, displayName: true, role: true, enabled: true } }, _count: { select: { shipments: { where: { status: { notIn: ['DELIVERED', 'CANCELED'] } } } } } }, orderBy: [{ displayName: 'asc' }, { id: 'asc' }], skip: (page - 1) * 20, take: 20 }),
       this.prisma.courier.count({ where }),
     ]);
     return { items: items.map(({ _count, ...item }) => ({ ...item, activeAssignmentCount: _count.shipments })), total, page, pageSize: 20, totalPages: Math.ceil(total / 20) };
@@ -60,7 +60,7 @@ export class CouriersService {
       if (!current) throw new NotFoundException('Repartidor no encontrado');
       if (current.version !== version) throw new ConflictException('La ficha cambió. Recargala antes de guardar.');
       if ((current.active && !data.active) || (current.available && !data.available)) {
-        const activeCount = await tx.shipment.count({ where: { assignedCourierId: id, status: { in: ['PENDING', 'IN_ROUTE'] } } });
+        const activeCount = await tx.shipment.count({ where: { assignedCourierId: id, status: { notIn: ['DELIVERED', 'CANCELED'] } } });
         if (activeCount > 0 && confirmedActiveAssignments !== activeCount) throw new ConflictException('El repartidor tiene tareas activas. Recargá la ficha y confirmá la operación.');
       }
       const changed = (Object.keys(data) as Array<keyof typeof data>).filter((key) => current[key] !== data[key]);

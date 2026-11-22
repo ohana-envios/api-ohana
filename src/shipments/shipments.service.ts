@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ShipmentInput } from './shipment-types.js';
@@ -18,15 +18,20 @@ export class ShipmentsService {
         const registration = await tx.customerRegistration.findUnique({ where: { userId: actorId }, select: { customerId: true, pending: true, approvedAt: true, approvedById: true } });
         if (!registration || registration.customerId !== input.customerId || registration.pending || !registration.approvedAt || !registration.approvedById) throw new ForbiddenException('Operation not permitted');
       }
-      const code = `OH-${(key ?? randomUUID()).toUpperCase()}`;
       if (key) {
-        const existing = await tx.shipment.findUnique({ where: { code }, select: { id: true, code: true, status: true, createdAt: true, createdByUserId: true, customerId: true } });
+        const existing = await tx.shipment.findFirst({ where: { OR: [{ requestKey: key.toUpperCase() }, { code: `OH-${key.toUpperCase()}` }] }, select: { id: true, code: true, status: true, createdAt: true, createdByUserId: true, customerId: true } });
         if (existing) {
           if (existing.createdByUserId !== actorId || existing.customerId !== input.customerId) throw new ConflictException('Identificador de operación ya utilizado.');
           const { createdByUserId: _creator, customerId: _customer, ...result } = existing;
           return result;
         }
       }
+      let code = '';
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = `OH-${randomBytes(6).toString('hex').toUpperCase()}`;
+        if (!await tx.shipment.findUnique({ where: { code: candidate }, select: { id: true } })) { code = candidate; break; }
+      }
+      if (!code) throw new ConflictException('No se pudo generar el código. Intentá nuevamente.');
       await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${input.customerId} FOR UPDATE`;
       const customer = await tx.customer.findUnique({ where: { id: input.customerId }, select: { displayName: true, phone: true, enabled: true } });
       if (!customer?.enabled) throw new NotFoundException('Cliente no disponible');
@@ -39,7 +44,7 @@ export class ShipmentsService {
         await tx.customerDataAudit.create({ data: { customerId: input.customerId, addressId: address.id, actorUserId: actorId, action: 'ADDRESS_CREATE', fields: Object.keys(input.pickup.address) } });
       }
       const shipment = await tx.shipment.create({ data: {
-        code, customerId: input.customerId, createdByUserId: actorId,
+        code, requestKey: key?.toUpperCase(), customerId: input.customerId, createdByUserId: actorId,
         senderName: customer.displayName, senderPhone: customer.phone, recipientName: input.recipientName, recipientPhone: input.recipientPhone,
         pickupStreet: pickup.street, pickupNumber: pickup.number, pickupLocality: pickup.locality, pickupDepartment: pickup.department, pickupReference: pickup.reference,
         deliveryStreet: input.delivery.street, deliveryNumber: input.delivery.number, deliveryLocality: input.delivery.locality, deliveryDepartment: input.delivery.department, deliveryReference: input.delivery.reference,

@@ -1,0 +1,6 @@
+ALTER TYPE "ShipmentCustody" ADD VALUE IF NOT EXISTS 'COURIER';
+ALTER TYPE "ShipmentCustody" ADD VALUE IF NOT EXISTS 'DEPOT';
+ALTER TABLE "Shipment" ADD COLUMN "custodyCourierId" TEXT,
+  ADD COLUMN "custodyLocation" TEXT,
+  ADD COLUMN "custodyVersion" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_custodyCourierId_fkey" FOREIGN KEY ("custodyCourierId") REFERENCES "Courier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

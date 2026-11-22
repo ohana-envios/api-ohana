@@ -32,7 +32,10 @@ test('customer emails reject new duplicates while preserving legacy data and con
     assert.equal((await create(`create-${suffix}@example.invalid`)).status, 409);
     const c = await createFixture('C'); const collision = `race-${suffix}@example.invalid`;
     const combined = await Promise.all([edit(c, collision), create(collision.toUpperCase())]);
-    assert.deepEqual(combined.map(response => response.status).sort(), [200, 409]);
+    assert.ok([200, 409].includes(combined[0].status));
+    assert.ok([201, 409].includes(combined[1].status));
+    assert.equal(combined.filter(response => response.status === 409).length, 1);
+    assert.equal(await db.customer.count({ where: { email: { equals: collision, mode: 'insensitive' } } }), 1);
     assert.equal((await db.customer.findUniqueOrThrow({ where: { id: existing.id } })).email, `\t CREATE-${suffix}@example.invalid \n`);
     const empty = await createFixture('Empty', `empty-${suffix}@example.invalid`); assert.equal((await edit(empty, '')).status, 200);
   } finally { await app.close(); }

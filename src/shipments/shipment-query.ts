@@ -8,7 +8,7 @@ export function parseShipmentQuery(input: Record<string, unknown>): ShipmentQuer
   const value = (key: string) => ((input[key] as string | undefined) ?? '').trim();
   const code = value('code'), customer = value('customer'), recipient = value('recipient'), responsible = value('responsible');
   const status = value('status'), priority = value('priority'), pageText = value('page');
-  if ([code, customer, recipient, responsible].some((v) => v.length > 120) || (status && !['PENDING', 'IN_ROUTE', 'DELIVERED', 'CANCELED'].includes(status)) ||
+  if ([code, customer, recipient, responsible].some((v) => v.length > 120) || (status && !['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_DEPOT', 'IN_ROUTE', 'DELIVERED', 'NOT_DELIVERED', 'RESCHEDULED', 'CANCELED'].includes(status)) ||
       (priority && !['NORMAL', 'HIGH'].includes(priority)) || (pageText && !/^[1-9]\d{0,4}$/.test(pageText))) throw new BadRequestException('Filtros inválidos');
   const date = (key: string): Date | undefined => {
     const v = value(key); if (!v) return undefined;
