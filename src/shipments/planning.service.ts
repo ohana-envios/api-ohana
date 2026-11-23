@@ -15,7 +15,7 @@ export class PlanningService {
   async tasks(actorId: string, date: Date) {
     const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { enabled: true, role: true } });
     if (!actor?.enabled || actor.role !== 'COURIER') throw new ForbiddenException('Operation not permitted');
-    return this.prisma.shipment.findMany({ where: { plannedFor: date, status: { in: [...eligible] }, assignedCourier: { is: { userId: actorId, active: true } } }, select: { id: true, code: true, status: true, priority: true, recipientName: true, recipientPhone: true, pickupStreet: true, pickupNumber: true, pickupLocality: true, deliveryStreet: true, deliveryNumber: true, deliveryLocality: true, requestedPickupAt: true, requestedDeliveryAt: true }, orderBy: [{ requestedPickupAt: { sort: 'asc', nulls: 'last' } }, { priority: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }] });
+    return this.prisma.shipment.findMany({ where: { plannedFor: date, status: { in: [...eligible] }, assignedCourier: { is: { userId: actorId, active: true } } }, select: { id: true, code: true, status: true, priority: true, recipientName: true, recipientPhone: true, pickupStreet: true, pickupNumber: true, pickupLocality: true, deliveryStreet: true, deliveryNumber: true, deliveryLocality: true, requestedPickupAt: true, requestedDeliveryAt: true, plannedWindowStart: true, plannedWindowEnd: true }, orderBy: [{ requestedPickupAt: { sort: 'asc', nulls: 'last' } }, { priority: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }] });
   }
   async get(actorId: string, date: Date, page: number, search: string) {
     const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { enabled: true, role: true } });

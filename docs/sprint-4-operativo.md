@@ -10,6 +10,6 @@ La etiqueta se obtiene con acceso de administrador o cliente propietario, desde 
 
 Como regla conservadora, administración puede cancelar con motivo un envío pendiente o asignado solamente antes del retiro y mientras la custodia conocida sea del remitente. El historial se conserva; los envíos históricos con custodia desconocida no se cancelan por esta vía. El comportamiento posterior al retiro requiere acordar el flujo con el cliente.
 
-Entrega, incidencias y reprogramación continúan en Sprint 5; sus transiciones no se simulan como finalizadas. Las pruebas de API usan PostgreSQL aislado e identidad simulada. Quedan pendientes las pruebas visuales y de dispositivo, el recorrido con ZITADEL real, la aplicación coordinada de migraciones en staging y la validación con Fernando.
+La confirmación de entrega, las incidencias y la reprogramación administrativa cuentan con implementación local. Quedan pendientes la validación del recorrido y las pruebas integrales en staging y dispositivos. Las pruebas de API usan PostgreSQL aislado e identidad simulada. Quedan pendientes las pruebas visuales y de dispositivo, el recorrido con ZITADEL real, la aplicación coordinada de migraciones en staging y la validación con Fernando.
 
 Las pruebas automatizadas cubren cambios concurrentes de estado, custodia y planificación, retiros duplicados y los cruces entre retiro y cancelación o reasignación. Verifican que se conserve la custodia física y que no se registren acciones incompatibles; no sustituyen las pruebas con personas y dispositivos reales.

@@ -6,7 +6,7 @@ import type { ShipmentQuery } from './shipment-query.js';
 
 const summary = { id: true, code: true, recipientName: true, status: true, priority: true, createdAt: true, customer: { select: { displayName: true } } } as const;
 const details = { ...summary, senderName: true, recipientPhone: true, pickupStreet: true, pickupNumber: true, pickupLocality: true, pickupDepartment: true, pickupReference: true,
-  deliveryStreet: true, deliveryNumber: true, deliveryLocality: true, deliveryDepartment: true, deliveryReference: true, requestedPickupAt: true, requestedDeliveryAt: true,
+  deliveryStreet: true, deliveryNumber: true, deliveryLocality: true, deliveryDepartment: true, deliveryReference: true, requestedPickupAt: true, requestedDeliveryAt: true, pickedUpAt: true, plannedFor: true, plannedWindowStart: true, plannedWindowEnd: true,
   packages: { select: { sequence: true, description: true }, orderBy: { sequence: 'asc' } }, receipt: { select: { id: true, version: true } }, assignedCourier: { select: { id: true, displayName: true } }, notes: true } as const satisfies Prisma.ShipmentSelect;
 
 function scope(actor: OperationalUser): Prisma.ShipmentWhereInput {

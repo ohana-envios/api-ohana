@@ -33,6 +33,11 @@ services:
       ZITADEL_ORG_ID: ${ZITADEL_ORG_ID:-}
       ZITADEL_USER_SERVICE_TOKEN: ${ZITADEL_USER_SERVICE_TOKEN:-}
       ZITADEL_USER_INVITER_SUBJECTS: ${ZITADEL_USER_INVITER_SUBJECTS:-}
+      OHANA_PUSH_ENABLED: ${OHANA_PUSH_ENABLED:-true}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      OHANA_EVIDENCE_DIR: /var/lib/ohana-evidence
+    volumes:
+      - evidence_data:/var/lib/ohana-evidence
     ports:
       - "127.0.0.1:${OHANA_API_PORT:?OHANA_API_PORT is required}:3000"
     depends_on:
@@ -46,3 +51,4 @@ services:
 
 volumes:
   postgres_data:
+  evidence_data:

@@ -13,11 +13,172 @@ import { AssignmentService } from './assignment.service.js';
 import { StatusService } from './status.service.js';
 import { CustodyService } from './custody.service.js';
 import { PlanningService, parsePlanningDate } from './planning.service.js';
+import { IncidentService } from './incident.service.js';
+import { ReschedulingService } from './rescheduling.service.js';
+import { IncidentEvidenceService } from './incident-evidence.service.js';
+import { EventEvidenceService } from './event-evidence.service.js';
+import { RescheduleProposalService } from './reschedule-proposal.service.js';
+import { ProposalPushService } from './proposal-push.service.js';
+
+function incidentText(value: unknown, max: number, optional = false): string | undefined {
+  if (optional && (value === undefined || value === '')) return undefined;
+  if (typeof value !== 'string' || !value.trim() || value.length > max) throw new BadRequestException('Datos de incidencia inválidos');
+  return value.trim();
+}
 
 @Controller('shipments')
 @UseGuards(OperationalUserGuard, RolesGuard)
 export class ShipmentsController {
-  constructor(private readonly shipments: ShipmentsService, private readonly reads: ShipmentsReadService, private readonly assignments: AssignmentService, private readonly statuses: StatusService, private readonly custody: CustodyService, private readonly planning: PlanningService) {}
+  constructor(private readonly shipments: ShipmentsService, private readonly reads: ShipmentsReadService, private readonly assignments: AssignmentService, private readonly statuses: StatusService, private readonly custody: CustodyService, private readonly planning: PlanningService, private readonly incidents: IncidentService, private readonly rescheduling: ReschedulingService, private readonly incidentEvidence: IncidentEvidenceService, private readonly eventEvidence: EventEvidenceService, private readonly proposals: RescheduleProposalService, private readonly proposalPush: ProposalPushService) {}
+
+  @Post('push-devices')
+  @RequireRoles('ADMIN')
+  @Header('Cache-Control', 'no-store')
+  registerPushDevice(@Req() request: OperationalUserRequest, @Body() body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 2 || typeof (body as { token?: unknown }).token !== 'string' || !/^(Expo(nent)?PushToken)\[[A-Za-z0-9_-]{10,200}\]$/.test((body as { token: string }).token) || typeof (body as { expiresAt?: unknown }).expiresAt !== 'number' || !Number.isSafeInteger((body as { expiresAt: number }).expiresAt)) throw new BadRequestException('Dispositivo invalido');
+    const expires = (body as { expiresAt: number }).expiresAt;
+    if (expires <= Date.now()) throw new BadRequestException('Sesion vencida');
+    return this.proposalPush.register(request.currentUser!.id, (body as { token: string }).token, new Date(Math.min(expires, Date.now() + 86400000)));
+  }
+
+  @Post('push-devices/deactivate')
+  @RequireRoles('ADMIN')
+  @Header('Cache-Control', 'no-store')
+  deactivatePushDevice(@Req() request: OperationalUserRequest, @Body() body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || typeof (body as { token?: unknown }).token !== 'string' || !/^(Expo(nent)?PushToken)\[[A-Za-z0-9_-]{10,200}\]$/.test((body as { token: string }).token)) throw new BadRequestException('Dispositivo invalido');
+    return this.proposalPush.deactivate(request.currentUser!.id, (body as { token: string }).token);
+  }
+
+  @Get('reschedule-proposals/pending')
+  @RequireRoles('ADMIN')
+  @Header('Cache-Control', 'no-store')
+  pendingProposals(@Req() request: OperationalUserRequest, @Query() query: Record<string, unknown>) {
+    if (Object.keys(query).some((key) => key !== 'page') || (query.page !== undefined && (typeof query.page !== 'string' || !/^[1-9]\d{0,4}$/.test(query.page)))) throw new BadRequestException('Consulta inválida');
+    return this.proposals.pending(request.currentUser!.id, Number(query.page ?? 1));
+  }
+
+  @Get(':id/incidents/:incidentId/evidence')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  listIncidentEvidence(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('incidentId') incidentId: string, @Query() query: Record<string, unknown>) {
+    if (Object.keys(query).some((key) => key !== 'page') || (query.page !== undefined && (typeof query.page !== 'string' || !/^[1-9]\d{0,4}$/.test(query.page)))) throw new BadRequestException('Consulta inválida');
+    return this.incidentEvidence.list(request.currentUser!.id, id, incidentId, Number(query.page ?? 1));
+  }
+
+  @Get(':id/incidents/:incidentId/evidence/:evidenceId')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  readIncidentEvidence(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('incidentId') incidentId: string, @Param('evidenceId') evidenceId: string) {
+    return this.incidentEvidence.read(request.currentUser!.id, id, incidentId, evidenceId);
+  }
+
+  @Post(':id/incidents/:incidentId/evidence')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  @UseInterceptors(FileInterceptor('evidence', { limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 0 } }))
+  addIncidentEvidence(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('incidentId') incidentId: string, @Headers('idempotency-key') key: string | undefined, @UploadedFile() file?: ReceiptFile) {
+    if (!key || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)) throw new BadRequestException('Identificador de operación inválido');
+    const evidence = parseReceipt(file);
+    if (!evidence) throw new BadRequestException('Seleccioná una evidencia.');
+    return this.incidentEvidence.add(request.currentUser!.id, id, incidentId, key, evidence);
+  }
+
+  @Get(':id/events/:eventId/evidence')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  listEventEvidence(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('eventId') eventId: string, @Query() query: Record<string, unknown>) {
+    if (Object.keys(query).some((key) => key !== 'page') || (query.page !== undefined && (typeof query.page !== 'string' || !/^[1-9]\d{0,4}$/.test(query.page)))) throw new BadRequestException('Consulta inválida');
+    return this.eventEvidence.list(request.currentUser!.id, id, eventId, Number(query.page ?? 1));
+  }
+
+  @Get(':id/events/:eventId/evidence/:evidenceId')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  readEventEvidence(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('eventId') eventId: string, @Param('evidenceId') evidenceId: string) {
+    return this.eventEvidence.read(request.currentUser!.id, id, eventId, evidenceId);
+  }
+
+  @Post(':id/events/:eventId/evidence')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  @UseInterceptors(FileInterceptor('evidence', { limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 0 } }))
+  addEventEvidence(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('eventId') eventId: string, @Headers('idempotency-key') key: string | undefined, @UploadedFile() file?: ReceiptFile) {
+    if (!key || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)) throw new BadRequestException('Identificador de operación inválido');
+    const evidence = parseReceipt(file);
+    if (!evidence) throw new BadRequestException('Seleccioná una evidencia.');
+    return this.eventEvidence.add(request.currentUser!.id, id, eventId, key, evidence);
+  }
+
+  @Get(':id/reschedule-proposals')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  proposalList(@Req() request: OperationalUserRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) {
+    if (Object.keys(query).some((key) => key !== 'page') || (query.page !== undefined && (typeof query.page !== 'string' || !/^[1-9]\d{0,4}$/.test(query.page)))) throw new BadRequestException('Consulta invalida');
+    return this.proposals.list(request.currentUser!.id, id, Number(query.page ?? 1));
+  }
+
+  @Post(':id/reschedule-proposals')
+  @RequireRoles('COURIER')
+  @Header('Cache-Control', 'no-store')
+  proposalCreate(@Req() request: OperationalUserRequest, @Param('id') id: string, @Body() body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Propuesta invalida');
+    const input = body as Record<string, unknown>;
+    if (Object.keys(input).some((key) => !['requestKey', 'date', 'windowStart', 'windowEnd', 'reason', 'nextAction', 'incidentId'].includes(key)) || typeof input.requestKey !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestKey) || typeof input.date !== 'string' || (input.windowStart !== undefined && typeof input.windowStart !== 'string') || (input.windowEnd !== undefined && typeof input.windowEnd !== 'string')) throw new BadRequestException('Propuesta invalida');
+    return this.proposals.create(request.currentUser!.id, id, { requestKey: input.requestKey, date: input.date, windowStart: input.windowStart as string | undefined, windowEnd: input.windowEnd as string | undefined, reason: incidentText(input.reason, 500)!, nextAction: incidentText(input.nextAction, 500)!, incidentId: incidentText(input.incidentId, 128, true) });
+  }
+
+  @Post(':id/reschedule-proposals/:proposalId/reject')
+  @RequireRoles('ADMIN')
+  @Header('Cache-Control', 'no-store')
+  proposalReject(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('proposalId') proposalId: string, @Body() body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => key !== 'notes')) throw new BadRequestException('Rechazo invalido');
+    return this.proposals.reject(request.currentUser!.id, id, proposalId, incidentText((body as Record<string, unknown>).notes, 500)!);
+  }
+
+  @Get(':id/rescheduling')
+  @RequireRoles('ADMIN')
+  @Header('Cache-Control', 'no-store')
+  reschedulingDetails(@Req() request: OperationalUserRequest, @Param('id') id: string) {
+    return this.rescheduling.get(request.currentUser!.id, id);
+  }
+
+  @Post(':id/rescheduling')
+  @RequireRoles('ADMIN')
+  @Header('Cache-Control', 'no-store')
+  reschedule(@Req() request: OperationalUserRequest, @Param('id') id: string, @Body() body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Reprogramación inválida');
+    const input = body as Record<string, unknown>;
+    if (Object.keys(input).some((key) => !['date', 'windowStart', 'windowEnd', 'reason', 'nextAction', 'observation', 'incidentId', 'proposalId', 'keepAssignment', 'expectedUpdatedAt'].includes(key)) || typeof input.keepAssignment !== 'boolean' || typeof input.expectedUpdatedAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(input.expectedUpdatedAt) || typeof input.date !== 'string' || (input.windowStart !== undefined && typeof input.windowStart !== 'string') || (input.windowEnd !== undefined && typeof input.windowEnd !== 'string')) throw new BadRequestException('Reprogramación inválida');
+    return this.rescheduling.reschedule(request.currentUser!.id, id, { date: input.date, windowStart: input.windowStart as string | undefined, windowEnd: input.windowEnd as string | undefined, reason: incidentText(input.reason, 500)!, nextAction: incidentText(input.nextAction, 500)!, observation: incidentText(input.observation, 1000, true), incidentId: incidentText(input.incidentId, 128, true), proposalId: incidentText(input.proposalId, 128, true), keepAssignment: input.keepAssignment, expectedUpdatedAt: input.expectedUpdatedAt });
+  }
+
+  @Get(':id/incidents')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  listIncidents(@Req() request: OperationalUserRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) {
+    if (Object.keys(query).some((key) => key !== 'page') || (query.page !== undefined && (typeof query.page !== 'string' || !/^[1-9]\d{0,4}$/.test(query.page)))) throw new BadRequestException('Consulta inválida');
+    return this.incidents.list(request.currentUser!.id, id, Number(query.page ?? 1));
+  }
+
+  @Post(':id/incidents')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  createIncident(@Req() request: OperationalUserRequest, @Param('id') id: string, @Body() body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Incidencia inválida');
+    const input = body as Record<string, unknown>;
+    if (Object.keys(input).some((key) => !['requestKey', 'phase', 'kind', 'description', 'nextAction', 'failedAttempt'].includes(key)) || typeof input.requestKey !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestKey) || !['PICKUP', 'TRANSIT', 'DELIVERY', 'REVIEW'].includes(input.phase as string) || (input.failedAttempt !== undefined && typeof input.failedAttempt !== 'boolean') || (input.failedAttempt === true && !['PICKUP', 'DELIVERY'].includes(input.phase as string))) throw new BadRequestException('Incidencia inválida');
+    return this.incidents.create(request.currentUser!.id, id, { requestKey: input.requestKey, phase: input.phase as string, failedAttempt: input.failedAttempt === true, kind: incidentText(input.kind, 120)!, description: incidentText(input.description, 1000)!, nextAction: incidentText(input.nextAction, 1000, true) });
+  }
+
+  @Post(':id/incidents/:incidentId/resolve')
+  @RequireRoles('ADMIN')
+  @Header('Cache-Control', 'no-store')
+  resolveIncident(@Req() request: OperationalUserRequest, @Param('id') id: string, @Param('incidentId') incidentId: string, @Body() body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Resolución inválida');
+    const input = body as Record<string, unknown>;
+    if (Object.keys(input).some((key) => !['description', 'nextAction'].includes(key))) throw new BadRequestException('Resolución inválida');
+    return this.incidents.resolve(request.currentUser!.id, id, incidentId, incidentText(input.description, 1000)!, incidentText(input.nextAction, 1000, true));
+  }
 
   @Get()
   @RequireRoles('ADMIN', 'CUSTOMER', 'OPERATOR', 'COURIER')
@@ -119,13 +280,34 @@ export class ShipmentsController {
     return this.statuses.pickup(request.currentUser!.id, id, input.observation as string | undefined, parseReceipt(file));
   }
 
+  @Post(':id/delivery')
+  @RequireRoles('COURIER')
+  @Header('Cache-Control', 'no-store')
+  @UseInterceptors(FileInterceptor('evidence', { limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1, fieldSize: 4096 } }))
+  delivery(@Req() request: OperationalUserRequest, @Param('id') id: string, @Body() body: unknown, @UploadedFile() file?: ReceiptFile) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Entrega inválida');
+    let input = body as Record<string, unknown>;
+    if ('payload' in input) { if (Object.keys(input).length !== 1 || typeof input.payload !== 'string') throw new BadRequestException('Entrega inválida'); try { input = JSON.parse(input.payload); } catch { throw new BadRequestException('Entrega inválida'); } }
+    else if (file) throw new BadRequestException('Entrega inválida');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Entrega inválida');
+    if (Object.keys(input).some((key) => !['receiver', 'observation', 'relationship'].includes(key)) || typeof input.receiver !== 'string' || !input.receiver.trim() || input.receiver.length > 120 || (input.observation !== undefined && (typeof input.observation !== 'string' || input.observation.length > 1000)) || (input.relationship !== undefined && (typeof input.relationship !== 'string' || input.relationship.length > 120))) throw new BadRequestException('Indicá quién recibió el envío.');
+    return this.statuses.deliver(request.currentUser!.id, id, input.receiver, input.observation as string | undefined, input.relationship as string | undefined, parseReceipt(file));
+  }
+
+  @Get(':id/delivery/evidence')
+  @RequireRoles('ADMIN', 'COURIER')
+  @Header('Cache-Control', 'no-store')
+  deliveryEvidence(@Req() request: OperationalUserRequest, @Param('id') id: string) {
+    return this.statuses.deliveryEvidence(request.currentUser!.id, id);
+  }
+
   @Patch(':id/status')
   @RequireRoles('ADMIN', 'COURIER')
   @Header('Cache-Control', 'no-store')
   setStatus(@Req() request: OperationalUserRequest, @Param('id') id: string, @Body() body: unknown) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Estado inválido');
     const input = body as Record<string, unknown>;
-    if (Object.keys(input).some((key) => !['status', 'expectedStatus', 'observation'].includes(key)) || !['IN_ROUTE', 'IN_DEPOT'].includes(input.status as string) || !['PICKED_UP', 'IN_ROUTE', 'IN_DEPOT'].includes(input.expectedStatus as string) || (input.observation !== undefined && (typeof input.observation !== 'string' || input.observation.length > 1000))) throw new BadRequestException('Estado inválido');
+    if (Object.keys(input).some((key) => !['status', 'expectedStatus', 'observation'].includes(key)) || !['IN_ROUTE', 'IN_DEPOT'].includes(input.status as string) || !['PICKED_UP', 'IN_ROUTE', 'IN_DEPOT', 'RESCHEDULED'].includes(input.expectedStatus as string) || (input.observation !== undefined && (typeof input.observation !== 'string' || input.observation.length > 1000))) throw new BadRequestException('Estado inválido');
     return this.statuses.set(request.currentUser!.id, id, input.expectedStatus as string, input.status as 'IN_ROUTE' | 'IN_DEPOT', input.observation as string | undefined);
   }
 
@@ -183,7 +365,7 @@ export class ShipmentsController {
   @RequireRoles('ADMIN', 'CUSTOMER', 'OPERATOR')
   @Header('Cache-Control', 'no-store')
   history(@Req() request: OperationalUserRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) {
-    if (Object.keys(query).some((key) => !['page', 'type'].includes(key)) || (query.page !== undefined && (typeof query.page !== 'string' || !/^[1-9]\d{0,4}$/.test(query.page))) || (query.type !== undefined && (typeof query.type !== 'string' || !['CREATED', 'STATUS_CHANGED', 'RECEIPT_ADDED', 'RECEIPT_REPLACED', 'ASSIGNMENT_CHANGED', 'CUSTODY_CHANGED', 'PLAN_CHANGED'].includes(query.type)))) throw new BadRequestException('Consulta inválida');
+    if (Object.keys(query).some((key) => !['page', 'type'].includes(key)) || (query.page !== undefined && (typeof query.page !== 'string' || !/^[1-9]\d{0,4}$/.test(query.page))) || (query.type !== undefined && (typeof query.type !== 'string' || !['CREATED', 'STATUS_CHANGED', 'RECEIPT_ADDED', 'RECEIPT_REPLACED', 'ASSIGNMENT_CHANGED', 'CUSTODY_CHANGED', 'PLAN_CHANGED', 'INCIDENT_RECORDED', 'INCIDENT_RESOLVED', 'INCIDENT_EVIDENCE_ADDED', 'EVENT_EVIDENCE_ADDED', 'RESCHEDULED', 'RESCHEDULE_PROPOSED', 'RESCHEDULE_PROPOSAL_REJECTED'].includes(query.type)))) throw new BadRequestException('Consulta inválida');
     return this.reads.history(request.currentUser!, id, Number(query.page ?? 1), typeof query.type === 'string' ? query.type : undefined);
   }
 
