@@ -48,6 +48,19 @@ fi
 mv "$backup_tmp" "$backup"
 echo "Respaldo creado: $backup"
 
+# Los archivos son inmutables; respaldarlos después del dump conserva como mínimo
+# todos los objetos referenciados por esa instantánea de PostgreSQL.
+docker volume create ohana-staging_evidence_data >/dev/null
+evidence_backup_tmp="$root/backups/$timestamp-before-$sha-evidence.tar.tmp"
+evidence_backup="$root/backups/$timestamp-before-$sha-evidence.tar"
+if ! docker run --rm --network none --read-only -v ohana-staging_evidence_data:/source:ro postgres:17 tar -cf - -C /source . > "$evidence_backup_tmp"; then
+  rm -f "$evidence_backup_tmp"
+  echo 'Falló el respaldo de evidencias; se detiene el despliegue' >&2
+  exit 1
+fi
+mv "$evidence_backup_tmp" "$evidence_backup"
+echo "Respaldo de evidencias creado: $evidence_backup"
+
 "${compose[@]}" run --rm api npm run prisma:migrate:deploy
 "${compose[@]}" up -d api
 

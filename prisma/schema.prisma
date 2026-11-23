@@ -41,6 +41,7 @@ enum ShipmentCustody {
   SENDER
   COURIER
   DEPOT
+  RECIPIENT
 }
 
 model User {
@@ -69,6 +70,7 @@ model User {
   courierProfile Courier? @relation("CourierUser")
   receiptsUploaded ShipmentReceipt[] @relation("ReceiptUploader")
   receiptsReplaced ShipmentReceiptHistory[] @relation("ReceiptReplacer")
+  pushDevices PushDevice[]
 
   @@index([role, enabled])
 }
@@ -273,6 +275,8 @@ model Shipment {
   requestedPickupAt     DateTime?        @db.Timestamptz(3)
   requestedDeliveryAt   DateTime?        @db.Timestamptz(3)
   plannedFor            DateTime?        @db.Date
+  plannedWindowStart    String?
+  plannedWindowEnd      String?
   custody               ShipmentCustody?
   custodyCourierId      String?
   custodyCourier        Courier?         @relation("CustodyCourier", fields: [custodyCourierId], references: [id], onDelete: Restrict)
@@ -293,12 +297,118 @@ model Shipment {
   events                ShipmentEvent[]
   receipt               ShipmentReceipt?
   receiptHistory        ShipmentReceiptHistory[]
+  incidents             ShipmentIncident[]
+  rescheduleProposals   RescheduleProposal[]
 
   @@index([customerId, createdAt])
   @@index([status, priority, createdAt])
   @@index([createdByUserId])
   @@index([assignedCourierId, status])
   @@index([plannedFor])
+}
+
+model RescheduleProposal {
+  id String @id @default(cuid())
+  requestKey String @unique
+  shipmentId String
+  actorUserId String
+  actorLabel String
+  proposedDate DateTime @db.Date
+  windowStart String?
+  windowEnd String?
+  reason String
+  nextAction String
+  incidentId String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  decision RescheduleDecision?
+  pushDeliveries PushDelivery[]
+  @@index([shipmentId, createdAt])
+}
+
+model PushDevice {
+  id String @id @default(cuid())
+  userId String
+  token String @unique
+  enabled Boolean @default(true)
+  validUntil DateTime @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deliveries PushDelivery[]
+  @@index([userId, enabled])
+}
+
+model PushDelivery {
+  id String @id @default(cuid())
+  proposalId String
+  deviceId String
+  status String @default("PENDING")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @db.Timestamptz(3)
+  ticketId String?
+  lastError String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  proposal RescheduleProposal @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+  device PushDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  @@unique([proposalId, deviceId])
+  @@index([status, nextAttemptAt])
+}
+
+model RescheduleDecision {
+  id String @id @default(cuid())
+  proposalId String @unique
+  actorUserId String
+  actorLabel String
+  approved Boolean
+  notes String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  proposal RescheduleProposal @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+}
+
+model ShipmentIncident {
+  id String @id @default(cuid())
+  requestKey String @unique
+  shipmentId String
+  actorUserId String
+  actorLabel String
+  phase String
+  kind String
+  description String
+  nextAction String?
+  failedAttempt Boolean @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  resolution IncidentResolution?
+  evidence IncidentEvidence[]
+  @@index([shipmentId, createdAt])
+}
+
+model IncidentEvidence {
+  id String @id @default(cuid())
+  requestKey String @unique
+  incidentId String
+  eventId String @unique
+  actorUserId String
+  actorLabel String
+  storageKey String @unique
+  mediaType String
+  size Int
+  sha256 String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  incident ShipmentIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  event ShipmentEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  @@index([incidentId, createdAt])
+}
+
+model IncidentResolution {
+  id String @id @default(cuid())
+  incidentId String @unique
+  actorUserId String
+  actorLabel String
+  description String
+  nextAction String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  incident ShipmentIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
 }
 
 model ShipmentReceiptHistory {
@@ -359,9 +469,30 @@ model ShipmentEvent {
   shipment          Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
   actor             User?           @relation("EventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
   evidence          CustodyEvidence?
+  deliveryEvidence  DeliveryEvidence?
+  incidentEvidence  IncidentEvidence?
+  attachments       EventEvidence[] @relation("EvidenceTarget")
+  attachmentEvent   EventEvidence? @relation("EvidenceAudit")
 
   @@index([shipmentId, occurredAt])
   @@index([actorUserId])
+}
+
+model EventEvidence {
+  id String @id @default(cuid())
+  requestKey String @unique
+  targetEventId String
+  auditEventId String @unique
+  actorUserId String
+  actorLabel String
+  storageKey String @unique
+  mediaType String
+  size Int
+  sha256 String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  targetEvent ShipmentEvent @relation("EvidenceTarget", fields: [targetEventId], references: [id], onDelete: Restrict)
+  auditEvent ShipmentEvent @relation("EvidenceAudit", fields: [auditEventId], references: [id], onDelete: Restrict)
+  @@index([targetEventId, createdAt])
 }
 
 model CustodyEvidence {
@@ -372,4 +503,27 @@ model CustodyEvidence {
   data       Bytes
   createdAt  DateTime      @default(now()) @db.Timestamptz(3)
   event      ShipmentEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+}
+
+model DeliveryEvidence {
+  id         String        @id @default(cuid())
+  eventId    String        @unique
+  storageKey String        @unique
+  mediaType  String
+  size       Int
+  sha256     String
+  createdAt  DateTime      @default(now()) @db.Timestamptz(3)
+  event      ShipmentEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+}
+
+model LegacyFileCopy {
+  id String @id @default(cuid())
+  sourceKind String
+  sourceId String
+  sourceSha256 String
+  storageKey String @unique
+  mediaType String
+  size Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([sourceKind, sourceId, sourceSha256])
 }
