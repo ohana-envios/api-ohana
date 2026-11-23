@@ -1,0 +1,13 @@
+﻿# Avisos de propuestas de reprogramación
+
+El aviso interno se calcula a partir de propuestas pendientes de envíos abiertos; aparece a administradores habilitados en la web y en la aplicación móvil. La consulta se actualiza al entrar y cada 20 segundos mientras la aplicación está visible. Al abrir un aviso se consulta el envío y la decisión sigue siendo una acción administrativa. No son mensajes leídos/no leídos: el contador representa trabajo pendiente.
+
+## Push móvil
+
+Con una compilación de desarrollo o producción y un proyecto EAS configurado, la aplicación solicita permiso para avisos y registra el Expo Push Token de la sesión administrativa. El token se desactiva al salir cuando hay conexión y caduca como máximo al vencer la sesión o 24 horas después; si la sesión ya no es válida, el administrador debe ingresar nuevamente para registrar el dispositivo. El contenido push es genérico y al pulsarlo se abre el envío tras autenticar. No se muestran datos personales en el aviso del sistema.
+
+La API encola una entrega por dispositivo habilitado y propuesta. El proceso de envío corre solo si `OHANA_PUSH_ENABLED=true` (el compose de despliegue lo activa por defecto), consulta recibos de Expo y reintenta fallas temporales con espera creciente. Los avisos de propuestas ya resueltas o envíos cerrados se cancelan. Un error del proveedor no revierte la propuesta y la campana interna permanece disponible. Después de ocho fallas, la entrega queda en estado `FAILED`; todavía no hay pantalla operativa para reintentarla manualmente. El estado `DELIVERED` indica aceptación del proveedor de destino según el recibo de Expo, no una confirmación de lectura en el teléfono.
+
+Para completar el despliegue se necesita un proyecto EAS de Ohana con `EXPO_PUBLIC_EAS_PROJECT_ID` (o `extra.eas.projectId` provisto por EAS), identificadores de app acordados con el equipo y credenciales FCM para Android; iOS necesita credenciales APNs y cuenta Apple de desarrollador. En el servidor puede configurarse `EXPO_ACCESS_TOKEN` si el proyecto Expo exige autenticación del servicio push. Nunca publicar secretos en variables `EXPO_PUBLIC_`. En Expo SDK 58, Expo Go en Android no permite probar push remotas: se requiere una compilación de desarrollo instalada en un dispositivo real. Las pruebas de API simulan Expo; la entrega real, los permisos del sistema, los enlaces al tocar el aviso, la sesión vencida y la revocación de acceso deben validarse en dispositivos.
+
+Fuentes: https://docs.expo.dev/push-notifications/push-notifications-setup/ y https://docs.expo.dev/push-notifications/sending-notifications/.

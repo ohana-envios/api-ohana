@@ -1,0 +1,42 @@
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { test } from 'node:test';
+import { NestFactory } from '@nestjs/core';
+import { AuthTokenService } from '../dist/auth/auth-token.service.js';
+import { PrismaService } from '../dist/prisma/prisma.service.js';
+if (process.env.DATABASE_URL !== 'postgresql://ohana_test@127.0.0.1:56543/ohana_isolated_test') throw new Error('Requires dedicated isolated PostgreSQL');
+process.env.NODE_ENV = 'test';
+for (const key of ['ZITADEL_ISSUER_URL','ZITADEL_PROJECT_ID','ZITADEL_WEB_CLIENT_IDS','ZITADEL_MOBILE_CLIENT_IDS','ZITADEL_API_CLIENT_ID','ZITADEL_API_CLIENT_SECRET']) delete process.env[key];
+const { AppModule } = await import('../dist/app.module.js');
+test('customer emails reject new duplicates while preserving legacy data and concurrent writes', async () => {
+  const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false }); const suffix = randomUUID();
+  app.get(AuthTokenService).verify = async token => ({ sub: `${token}-${suffix}` }); app.setGlobalPrefix('api');
+  try {
+    await app.listen(0, '127.0.0.1'); const db = app.get(PrismaService); const url = await app.getUrl();
+    await db.user.create({ data: { externalAuthId: `admin-${suffix}`, email: `admin-${suffix}@example.invalid`, displayName: 'Admin', role: 'ADMIN' } });
+    const createFixture = (name, email = null) => db.customer.create({ data: { displayName: name, type: 'PERSON', email } });
+    const legacy = `LEGACY-${suffix}@example.invalid`;
+    const firstLegacy = await createFixture('Legacy A', ` ${legacy} `); const secondLegacy = await createFixture('Legacy B', legacy.toLowerCase());
+    const a = await createFixture('A'); const b = await createFixture('B');
+    const edit = (customer, email, displayName = customer.displayName) => fetch(`${url}/api/customers/${customer.id}`, { method: 'PATCH', headers: { Authorization: 'Bearer admin', 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName, legalName: '', phone: '', email, expected: { displayName: customer.displayName, legalName: customer.legalName, email: customer.email, phone: customer.phone } }) });
+    const legacyEdit = await edit(firstLegacy, `  ${legacy.toLowerCase()}  `, 'Legacy edit'); assert.equal(legacyEdit.status, 200);
+    assert.equal((await db.customer.findUniqueOrThrow({ where: { id: secondLegacy.id } })).email, legacy.toLowerCase());
+    const rejected = await edit(a, ` ${legacy.toLowerCase()} `); assert.equal(rejected.status, 409); assert.equal((await rejected.json()).code, 'CUSTOMER_EMAIL_DUPLICATE');
+    assert.equal((await db.customer.findUniqueOrThrow({ where: { id: a.id } })).email, null);
+    const duplicate = `duplicate-${suffix}@example.invalid`;
+    const pair = await Promise.all([edit(a, duplicate.toUpperCase()), edit(b, ` ${duplicate} `)]);
+    assert.deepEqual(pair.map(response => response.status).sort(), [200, 409]);
+    const existing = await createFixture('Whitespace', `\t CREATE-${suffix}@example.invalid \n`);
+    const create = (email) => fetch(`${url}/api/customer-registrations/admin`, { method: 'POST', headers: { Authorization: 'Bearer admin', 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName: 'Nuevo', type: 'PERSON', phone: '', email }) });
+    assert.equal((await create(`create-${suffix}@example.invalid`)).status, 409);
+    const c = await createFixture('C'); const collision = `race-${suffix}@example.invalid`;
+    const combined = await Promise.all([edit(c, collision), create(collision.toUpperCase())]);
+    assert.ok([200, 409].includes(combined[0].status));
+    assert.ok([201, 409].includes(combined[1].status));
+    assert.equal(combined.filter(response => response.status === 409).length, 1);
+    assert.equal(await db.customer.count({ where: { email: { equals: collision, mode: 'insensitive' } } }), 1);
+    assert.equal((await db.customer.findUniqueOrThrow({ where: { id: existing.id } })).email, `\t CREATE-${suffix}@example.invalid \n`);
+    const empty = await createFixture('Empty', `empty-${suffix}@example.invalid`); assert.equal((await edit(empty, '')).status, 200);
+  } finally { await app.close(); }
+});
